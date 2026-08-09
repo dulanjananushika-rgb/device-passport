@@ -1,0 +1,49 @@
+{
+  "reportVersion": "1.0",
+  "collectedAt": "2026-08-10T01:42:00.0000000Z",
+  "collector": {
+    "name": "DevicePassport Windows Collector",
+    "version": "0.1.0",
+    "hostname": "LAPMART-TEST-04"
+  },
+  "device": {
+    "manufacturer": "LENOVO",
+    "model": "20W0S4KD00",
+    "serialNumber": "PF3K9L2A",
+    "processor": "11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz",
+    "memoryGB": 16,
+    "biosVersion": "N34ET58W (1.58)",
+    "operatingSystem": "Microsoft Windows 11 Pro"
+  },
+  "battery": {
+    "present": true,
+    "designedCapacityMWh": 50500,
+    "fullChargeCapacityMWh": 43935,
+    "healthPercent": 87,
+    "cycleCount": 184,
+    "charging": false
+  },
+  "storage": [
+    {
+      "model": "SAMSUNG MZVLQ512HBLU-00BL7",
+      "serialNumber": "S64ENX0R412345",
+      "interface": "SCSI",
+      "mediaType": "Fixed hard disk media",
+      "sizeGB": 476.9,
+      "healthStatus": "OK"
+    }
+  ],
+  "manualChecks": {
+    "display": "Not checked",
+    "keyboard": "Not checked",
+    "camera": "Not checked",
+    "audio": "Not checked",
+    "ports": "Not checked",
+    "wifiBluetooth": "Not checked"
+  },
+  "integrity": {
+    "source": "local-windows-cim",
+    "signed": false,
+    "note": "MVP collector report. Report signing will be added before production use."
+  }
+}
