@@ -1,5 +1,5 @@
 <#
-  DevicePassport Windows Tester Agent V3
+  DevicePassport Windows Tester Agent V4
 
   Runs the built-in hardware collector, records the physical inspection,
   attaches device photos, signs the exact JSON report, and uploads it to a
@@ -16,13 +16,17 @@ $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-$script:AppVersion = "0.3.0"
+$script:AppVersion = "0.4.0"
 $script:Root = Join-Path $env:LOCALAPPDATA "DevicePassport"
 $script:Queue = Join-Path $script:Root "queue"
 $script:ConfigPath = Join-Path $script:Root "agent-config.json"
 $script:CollectorPath = Join-Path $PSScriptRoot "collect-device-health.ps1"
+$script:InteractiveTestsPath = Join-Path $PSScriptRoot "DevicePassport.InteractiveTests.ps1"
 $script:PhotoPaths = New-Object System.Collections.Generic.List[string]
+$script:InteractiveEvidence = [ordered]@{}
 New-Item -ItemType Directory -Path $script:Queue -Force | Out-Null
+if (-not (Test-Path -LiteralPath $script:InteractiveTestsPath)) { throw "DevicePassport.InteractiveTests.ps1 must be beside the tester agent." }
+. $script:InteractiveTestsPath
 
 function ConvertTo-ProtectedToken {
     param([Parameter(Mandatory = $true)][string]$Token)
@@ -114,9 +118,9 @@ function Get-QueueCount {
 
 $config = Get-AgentConfig
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "DevicePassport Windows Tester V3"
-$form.Size = New-Object System.Drawing.Size(780, 720)
-$form.MinimumSize = New-Object System.Drawing.Size(720, 650)
+$form.Text = "DevicePassport Windows Tester V4"
+$form.Size = New-Object System.Drawing.Size(780, 770)
+$form.MinimumSize = New-Object System.Drawing.Size(720, 700)
 $form.StartPosition = "CenterScreen"
 $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 $form.BackColor = [System.Drawing.Color]::FromArgb(244, 247, 243)
@@ -129,7 +133,7 @@ $title.AutoSize = $true
 $form.Controls.Add($title)
 
 $subtitle = New-Object System.Windows.Forms.Label
-$subtitle.Text = "One-click hardware collection, signed upload, and offline retry"
+$subtitle.Text = "Interactive hardware verification, signed upload, and offline retry"
 $subtitle.ForeColor = [System.Drawing.Color]::DimGray
 $subtitle.Location = New-Object System.Drawing.Point(28, 58)
 $subtitle.AutoSize = $true
@@ -159,9 +163,9 @@ $tokenBox.Text = $config.token
 $form.Controls.Add($tokenBox)
 
 $checkGroup = New-Object System.Windows.Forms.GroupBox
-$checkGroup.Text = "Physical inspection"
+$checkGroup.Text = "Interactive physical inspection"
 $checkGroup.Location = New-Object System.Drawing.Point(28, 160)
-$checkGroup.Size = New-Object System.Drawing.Size(700, 168)
+$checkGroup.Size = New-Object System.Drawing.Size(700, 198)
 $form.Controls.Add($checkGroup)
 
 $checkDefinitions = [ordered]@{
@@ -173,6 +177,7 @@ $checkDefinitions = [ordered]@{
     wireless = "Wi-Fi / Bluetooth"
 }
 $checkControls = @{}
+$testButtons = @{}
 $index = 0
 foreach ($key in $checkDefinitions.Keys) {
     $column = $index % 2
@@ -182,60 +187,72 @@ foreach ($key in $checkDefinitions.Keys) {
     $label = New-Object System.Windows.Forms.Label
     $label.Text = $checkDefinitions[$key]
     $label.Location = New-Object System.Drawing.Point($x, ($y + 5))
-    $label.Size = New-Object System.Drawing.Size(170, 22)
+    $label.Size = New-Object System.Drawing.Size(132, 22)
     $checkGroup.Controls.Add($label)
     $combo = New-Object System.Windows.Forms.ComboBox
     $combo.DropDownStyle = "DropDownList"
     $combo.Items.AddRange(@("Not checked", "Pass", "Fail"))
     $combo.SelectedIndex = 0
-    $combo.Location = New-Object System.Drawing.Point(($x + 178), $y)
-    $combo.Size = New-Object System.Drawing.Size(135, 26)
+    $combo.Location = New-Object System.Drawing.Point(($x + 134), $y)
+    $combo.Size = New-Object System.Drawing.Size(100, 26)
     $checkGroup.Controls.Add($combo)
+    $test = New-Object System.Windows.Forms.Button
+    $test.Text = "Test"
+    $test.Location = New-Object System.Drawing.Point(($x + 242), $y)
+    $test.Size = New-Object System.Drawing.Size(72, 26)
+    $checkGroup.Controls.Add($test)
     $checkControls[$key] = $combo
+    $testButtons[$key] = $test
     $index++
 }
 
-Add-FieldLabel "Technician notes" 28 344
+$runSuite = New-Object System.Windows.Forms.Button
+$runSuite.Text = "RUN ALL INTERACTIVE TESTS"
+$runSuite.Location = New-Object System.Drawing.Point(18, 154)
+$runSuite.Size = New-Object System.Drawing.Size(652, 30)
+$checkGroup.Controls.Add($runSuite)
+
+Add-FieldLabel "Technician notes" 28 374
 $notesBox = New-Object System.Windows.Forms.TextBox
-$notesBox.Location = New-Object System.Drawing.Point(28, 365)
+$notesBox.Location = New-Object System.Drawing.Point(28, 395)
 $notesBox.Size = New-Object System.Drawing.Size(700, 65)
 $notesBox.Multiline = $true
 $notesBox.MaxLength = 800
 $form.Controls.Add($notesBox)
 
-Add-FieldLabel "Device photos (maximum 4, 2 MB each)" 28 446
+Add-FieldLabel "Device photos (maximum 4, 2 MB each)" 28 476
 $photoList = New-Object System.Windows.Forms.ListBox
-$photoList.Location = New-Object System.Drawing.Point(28, 469)
+$photoList.Location = New-Object System.Drawing.Point(28, 499)
 $photoList.Size = New-Object System.Drawing.Size(465, 70)
 $form.Controls.Add($photoList)
 
 $addPhotos = New-Object System.Windows.Forms.Button
 $addPhotos.Text = "Add photos"
-$addPhotos.Location = New-Object System.Drawing.Point(508, 469)
+$addPhotos.Location = New-Object System.Drawing.Point(508, 499)
 $addPhotos.Size = New-Object System.Drawing.Size(105, 30)
 $form.Controls.Add($addPhotos)
 
 $openCamera = New-Object System.Windows.Forms.Button
-$openCamera.Text = "Open Camera"
-$openCamera.Location = New-Object System.Drawing.Point(623, 469)
+$openCamera.Text = "Capture photo"
+$openCamera.Location = New-Object System.Drawing.Point(623, 499)
 $openCamera.Size = New-Object System.Drawing.Size(105, 30)
 $form.Controls.Add($openCamera)
 
 $clearPhotos = New-Object System.Windows.Forms.Button
 $clearPhotos.Text = "Clear photos"
-$clearPhotos.Location = New-Object System.Drawing.Point(508, 509)
+$clearPhotos.Location = New-Object System.Drawing.Point(508, 539)
 $clearPhotos.Size = New-Object System.Drawing.Size(220, 30)
 $form.Controls.Add($clearPhotos)
 
 $status = New-Object System.Windows.Forms.Label
 $status.Text = "Ready. Queue: $(Get-QueueCount)"
-$status.Location = New-Object System.Drawing.Point(28, 558)
+$status.Location = New-Object System.Drawing.Point(28, 588)
 $status.Size = New-Object System.Drawing.Size(700, 24)
 $status.ForeColor = [System.Drawing.Color]::FromArgb(34, 92, 67)
 $form.Controls.Add($status)
 
 $progress = New-Object System.Windows.Forms.ProgressBar
-$progress.Location = New-Object System.Drawing.Point(28, 585)
+$progress.Location = New-Object System.Drawing.Point(28, 615)
 $progress.Size = New-Object System.Drawing.Size(700, 14)
 $progress.Minimum = 0
 $progress.Maximum = 100
@@ -244,7 +261,7 @@ $form.Controls.Add($progress)
 $runButton = New-Object System.Windows.Forms.Button
 $runButton.Text = "RUN FULL TEST + UPLOAD"
 $runButton.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
-$runButton.Location = New-Object System.Drawing.Point(28, 616)
+$runButton.Location = New-Object System.Drawing.Point(28, 646)
 $runButton.Size = New-Object System.Drawing.Size(470, 38)
 $runButton.BackColor = [System.Drawing.Color]::FromArgb(35, 91, 67)
 $runButton.ForeColor = [System.Drawing.Color]::White
@@ -253,7 +270,7 @@ $form.Controls.Add($runButton)
 
 $retryButton = New-Object System.Windows.Forms.Button
 $retryButton.Text = "Retry offline queue"
-$retryButton.Location = New-Object System.Drawing.Point(508, 616)
+$retryButton.Location = New-Object System.Drawing.Point(508, 646)
 $retryButton.Size = New-Object System.Drawing.Size(220, 38)
 $form.Controls.Add($retryButton)
 
@@ -262,6 +279,66 @@ function Set-TesterStatus([string]$Text, [int]$Percent) {
     $progress.Value = [math]::Max(0, [math]::Min(100, $Percent))
     [System.Windows.Forms.Application]::DoEvents()
 }
+
+function Set-InteractiveResult {
+    param([Parameter(Mandatory = $true)][string]$Key, [Parameter(Mandatory = $true)]$Result)
+    $script:InteractiveEvidence[$Key] = [ordered]@{
+        status = [string]$Result.status
+        detail = [string]$Result.detail
+        metrics = $Result.metrics
+        completedAt = [string]$Result.completedAt
+    }
+    if ($Result.status -eq "pass") { $checkControls[$Key].SelectedItem = "Pass" }
+    elseif ($Result.status -eq "fail") { $checkControls[$Key].SelectedItem = "Fail" }
+    if (-not [string]::IsNullOrWhiteSpace([string]$Result.photoPath) -and -not $script:PhotoPaths.Contains([string]$Result.photoPath)) {
+        if ($script:PhotoPaths.Count -lt 4) {
+            $script:PhotoPaths.Add([string]$Result.photoPath)
+            $photoList.Items.Add([IO.Path]::GetFileName([string]$Result.photoPath)) | Out-Null
+        }
+        else { [Windows.Forms.MessageBox]::Show("The camera photo was tested but could not be attached because four evidence photos are already selected.", "DevicePassport photo limit") | Out-Null }
+    }
+    Set-TesterStatus "$($checkDefinitions[$Key]): $($Result.detail)" 0
+}
+
+function Invoke-InteractiveCheck {
+    param([Parameter(Mandatory = $true)][string]$Key)
+    try {
+        $result = switch ($Key) {
+            "display" { Invoke-DpScreenTest }
+            "keyboard" { Invoke-DpKeyboardTest }
+            "camera" { Invoke-DpCameraTest }
+            "audio" { Invoke-DpAudioTest }
+            "ports" { Invoke-DpPortsTest }
+            "wireless" { Invoke-DpWirelessTest -ServerUrl $serverBox.Text.Trim() }
+            default { throw "Unknown interactive check: $Key" }
+        }
+        Set-InteractiveResult -Key $Key -Result $result
+        return $result
+    }
+    catch {
+        [Windows.Forms.MessageBox]::Show("$($checkDefinitions[$Key]) test failed to start: $($_.Exception.Message)", "DevicePassport interactive test") | Out-Null
+        return $null
+    }
+}
+
+foreach ($key in $testButtons.Keys) {
+    $currentKey = [string]$key
+    $handler = { [void](Invoke-InteractiveCheck -Key $currentKey) }.GetNewClosure()
+    $testButtons[$key].Add_Click($handler)
+}
+
+$runSuite.Add_Click({
+    $runSuite.Enabled = $false
+    try {
+        foreach ($key in $checkDefinitions.Keys) {
+            Set-TesterStatus "Opening $($checkDefinitions[$key]) interactive test..." 0
+            [void](Invoke-InteractiveCheck -Key $key)
+        }
+        $complete = @($checkDefinitions.Keys | Where-Object { $checkControls[$_].SelectedItem -in @("Pass", "Fail") }).Count
+        Set-TesterStatus "Interactive suite complete: $complete / $($checkDefinitions.Count) checks recorded." 0
+    }
+    finally { $runSuite.Enabled = $true }
+})
 
 $addPhotos.Add_Click({
     $dialog = New-Object System.Windows.Forms.OpenFileDialog
@@ -276,7 +353,7 @@ $addPhotos.Add_Click({
 })
 
 $openCamera.Add_Click({
-    try { Start-Process "microsoft.windows.camera:" } catch { [System.Windows.Forms.MessageBox]::Show("Windows Camera could not be opened. Use Add photos to select an existing image.", "DevicePassport") | Out-Null }
+    [void](Invoke-InteractiveCheck -Key "camera")
 })
 
 $clearPhotos.Add_Click({ $script:PhotoPaths.Clear(); $photoList.Items.Clear() })
@@ -314,6 +391,9 @@ $runButton.Add_Click({
             $value = [string]$checkControls[$key].SelectedItem
             if ($value -ne "Pass" -and $value -ne "Fail") { throw "Complete every physical inspection result before running the test." }
             $checks[$key] = $value.ToLowerInvariant()
+            $interactiveResult = $script:InteractiveEvidence[$key]
+            if ($null -eq $interactiveResult -or $interactiveResult.status -notin @("pass", "fail")) { throw "Run and approve the $($checkDefinitions[$key]) interactive test before uploading." }
+            if ($interactiveResult.status -ne $checks[$key]) { throw "The $($checkDefinitions[$key]) result changed after its interactive test. Re-run that test before uploading." }
         }
         Save-AgentConfig -ServerUrl $serverUrl -Token $token
         if (-not (Test-Path -LiteralPath $script:CollectorPath)) { throw "The hardware collector was not found beside this agent script." }
@@ -321,13 +401,20 @@ $runButton.Add_Click({
         Set-TesterStatus "1/4 Collecting battery, SSD, memory, CPU and BIOS data..." 15
         & $script:CollectorPath -OutputPath $temporaryReport -StressSeconds 10 | Out-Null
         $report = Get-Content -LiteralPath $temporaryReport -Raw | ConvertFrom-Json
-        $report.reportVersion = "3.0"
+        $report.reportVersion = "4.0"
         $report.collector.name = "DevicePassport Windows Tester Agent"
         $report.collector.version = $script:AppVersion
+        $report.manualChecks = $checks
+        $interactivePayload = [ordered]@{
+            suiteVersion = "4.0"
+            completedAt = (Get-Date).ToUniversalTime().ToString("o")
+            results = $script:InteractiveEvidence
+        }
+        $report | Add-Member -NotePropertyName interactiveTests -NotePropertyValue $interactivePayload -Force
         $report.integrity.source = "devicepassport-windows-agent"
         $report.integrity.signed = $true
-        $report.integrity.note = "The exact compact report JSON is signed with the station credential and verified by the server."
-        $reportJson = $report | ConvertTo-Json -Depth 10 -Compress
+        $report.integrity.note = "Hardware readings, manual results, and interactive evidence are inside the exact signed report JSON verified by the server."
+        $reportJson = $report | ConvertTo-Json -Depth 15 -Compress
 
         Set-TesterStatus "2/4 Preparing physical checks and device photos..." 55
         $photos = @(Get-PhotoPayload)

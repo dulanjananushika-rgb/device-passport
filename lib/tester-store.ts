@@ -201,7 +201,24 @@ export function acceptSignedTestRun(authorization: string | null, input: SignedT
     throw new TesterRequestError(`A connected test is already waiting for serial ${serial}.`, 409);
   }
 
-  const checks = validateChecks(input.checks);
+  const submittedChecks = validateChecks(input.checks);
+  const signedChecks = validateChecks(report.manualChecks);
+  for (const key of inspectionKeys) {
+    if (signedChecks[key] && submittedChecks[key] && signedChecks[key] !== submittedChecks[key]) {
+      throw new TesterRequestError(`The ${key} result does not match the signed report.`);
+    }
+  }
+  const v4Report = Number.parseFloat(report.reportVersion ?? "0") >= 4;
+  if (v4Report && !inspectionKeys.every((key) => signedChecks[key] === "pass" || signedChecks[key] === "fail")) {
+    throw new TesterRequestError("Tester V4 reports must include every manual result inside the signed JSON.");
+  }
+  if (v4Report && !inspectionKeys.every((key) => {
+    const status = report.interactiveTests?.results?.[key]?.status;
+    return (status === "pass" || status === "fail") && status === signedChecks[key];
+  })) {
+    throw new TesterRequestError("Tester V4 reports must include a completed interactive result matching every signed manual result.");
+  }
+  const checks = { ...submittedChecks, ...signedChecks };
   const notes = typeof input.notes === "string" ? input.notes.trim() : "";
   if (notes.length > 800) throw new TesterRequestError("Technician notes must be 800 characters or fewer.");
   const photos = validatePhotos(input.photos);

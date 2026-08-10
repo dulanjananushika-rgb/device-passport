@@ -34,7 +34,7 @@ export default async function PassportPage({ params }: PassportPageProps) {
       <div className="passport-wrap">
         <nav className="passport-nav">
           <ShopBrand settings={settings} />
-          <span className="verified-chip">Report integrity verified</span>
+          <span className="verified-chip">{device.diagnostics?.serverSignatureVerified ? "Agent signature verified" : "Technician-approved report"}</span>
         </nav>
 
         <article className="passport-card">
@@ -85,6 +85,15 @@ export default async function PassportPage({ params }: PassportPageProps) {
                   <p>{evidence.notes}</p>
                 </section>
               )}
+
+              {device.diagnostics?.interactiveTests.length ? (
+                <section className="passport-interactive">
+                  <div className="interactive-heading"><div><h2 className="section-title">Interactive test evidence</h2><p>Tester V{device.diagnostics.interactiveSuiteVersion || "4"} results preserved with this diagnostic report.</p></div>{device.diagnostics.serverSignatureVerified && <span>Signed evidence</span>}</div>
+                  <div className="test-grid">
+                    {device.diagnostics.interactiveTests.map((test) => <TestCard key={test.key} title={inspectionLabels[test.key].label} detail={test.detail} status={test.status === "not-run" ? "info" : test.status} />)}
+                  </div>
+                </section>
+              ) : null}
 
               {evidence && evidence.photos.length > 0 && (
                 <section className="passport-evidence">

@@ -4,6 +4,14 @@ export type InspectionKey = (typeof inspectionKeys)[number];
 export type CheckStatus = "pass" | "fail";
 export type InspectionChecks = Record<InspectionKey, CheckStatus>;
 
+export type InteractiveTestEvidence = {
+  key: InspectionKey;
+  status: CheckStatus | "not-run";
+  detail: string;
+  metrics: Record<string, unknown>;
+  completedAt: string;
+};
+
 export type DiagnosticReport = {
   reportVersion?: string;
   collector?: {
@@ -50,6 +58,25 @@ export type DiagnosticReport = {
       note?: string;
     };
   };
+  manualChecks?: Partial<Record<InspectionKey, CheckStatus>> & { wifiBluetooth?: CheckStatus };
+  interactiveTests?: {
+    suiteVersion?: string;
+    completedAt?: string;
+    results?: Partial<Record<InspectionKey, {
+      status?: CheckStatus | "not-run";
+      detail?: string;
+      metrics?: Record<string, unknown>;
+      completedAt?: string;
+    }>>;
+  };
+  integrity?: {
+    source?: string;
+    signed?: boolean;
+    note?: string;
+    serverSignatureVerified?: boolean;
+    verifiedTestRunId?: string;
+    verifiedAgentName?: string;
+  };
 };
 
 export type DeviceDiagnostics = {
@@ -68,6 +95,10 @@ export type DeviceDiagnostics = {
   cpuStressCompletedWorkers: number | null;
   cpuAverageLoadPercent: number | null;
   cpuPeakTemperatureC: number | null;
+  interactiveSuiteVersion: string;
+  interactiveTests: InteractiveTestEvidence[];
+  serverSignatureVerified: boolean;
+  verifiedAgentName: string;
 };
 
 export type InspectionPhotoInput = {
@@ -113,6 +144,17 @@ export function extractDeviceDiagnostics(report: DiagnosticReport | null | undef
   const stressPassed = stressTest?.executed === true && typeof stressTest.passed === "boolean"
     ? stressTest.passed && (peakTemperatureC === null || peakTemperatureC <= 95)
     : null;
+  const interactiveTests = inspectionKeys.flatMap((key) => {
+    const result = report?.interactiveTests?.results?.[key];
+    if (!result || (result.status !== "pass" && result.status !== "fail" && result.status !== "not-run")) return [];
+    return [{
+      key,
+      status: result.status,
+      detail: typeof result.detail === "string" ? result.detail.slice(0, 500) : "Interactive check completed.",
+      metrics: result.metrics && typeof result.metrics === "object" && !Array.isArray(result.metrics) ? result.metrics : {},
+      completedAt: typeof result.completedAt === "string" ? result.completedAt : "",
+    } satisfies InteractiveTestEvidence];
+  });
   return {
     reportVersion: report?.reportVersion?.trim() || "Legacy",
     collectorVersion: report?.collector?.version?.trim() || "Unknown",
@@ -129,6 +171,10 @@ export function extractDeviceDiagnostics(report: DiagnosticReport | null | undef
     cpuStressCompletedWorkers: optionalNumber(stressTest?.completedWorkers, 0, 256),
     cpuAverageLoadPercent: optionalNumber(stressTest?.averageLoadPercent, 0, 100),
     cpuPeakTemperatureC: peakTemperatureC,
+    interactiveSuiteVersion: report?.interactiveTests?.suiteVersion?.trim() || "",
+    interactiveTests,
+    serverSignatureVerified: report?.integrity?.serverSignatureVerified === true,
+    verifiedAgentName: report?.integrity?.verifiedAgentName?.trim() || "",
   };
 }
 

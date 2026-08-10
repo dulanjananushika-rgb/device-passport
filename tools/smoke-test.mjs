@@ -147,6 +147,21 @@ try {
 
   const report = JSON.parse(await readFile(new URL("../examples/sample-device-report.json", import.meta.url), "utf8"));
   report.device.serialNumber = serial;
+  report.reportVersion = "4.0";
+  report.collector.version = "0.4.0";
+  report.manualChecks = { display: "pass", keyboard: "pass", camera: "pass", audio: "pass", ports: "pass", wireless: "pass" };
+  report.interactiveTests = {
+    suiteVersion: "4.0",
+    completedAt: new Date().toISOString(),
+    results: {
+      display: { status: "pass", detail: "Six full-screen solid colours inspected; no panel defects marked.", metrics: { colorsShown: 6 }, completedAt: new Date().toISOString() },
+      keyboard: { status: "pass", detail: "60/60 common keyboard keys detected.", metrics: { requiredKeys: 60, detectedKeys: 60, missingKeys: [] }, completedAt: new Date().toISOString() },
+      camera: { status: "pass", detail: "Native Windows Camera photo captured and visually approved.", metrics: { fileName: "smoke-proof.png" }, completedAt: new Date().toISOString() },
+      audio: { status: "pass", detail: "Left and right stereo speaker channels confirmed clear.", metrics: { leftConfirmed: true, rightConfirmed: true }, completedAt: new Date().toISOString() },
+      ports: { status: "pass", detail: "USB/data, display output, and charging connector checks confirmed.", metrics: { usbDevices: 4, activeDisplays: 1, acConnected: true }, completedAt: new Date().toISOString() },
+      wireless: { status: "pass", detail: "Wi-Fi data path, server connection, and Bluetooth status confirmed.", metrics: { wifiConnected: true, serverReachable: true, bluetoothDevices: 2 }, completedAt: new Date().toISOString() },
+    },
+  };
   const reportJson = JSON.stringify(report);
   const signature = createHmac("sha256", testerAgentToken).update(reportJson, "utf8").digest("hex");
   const tamperedUpload = await fetch(`${baseUrl}/api/agent/test-runs`, {
@@ -155,6 +170,12 @@ try {
     body: JSON.stringify({ reportJson: `${reportJson} `, signature, checks: {} }),
   });
   if (tamperedUpload.status !== 401) throw new Error(`Tampered signed report expected 401, received ${tamperedUpload.status}.`);
+  const mismatchedSignedCheck = await fetch(`${baseUrl}/api/agent/test-runs`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${testerAgentToken}` },
+    body: JSON.stringify({ reportJson, signature, checks: { ...report.manualChecks, display: "fail" } }),
+  });
+  if (mismatchedSignedCheck.status !== 400) throw new Error(`Mismatched signed check expected 400, received ${mismatchedSignedCheck.status}.`);
   const signedUpload = await expectOk(await fetch(`${baseUrl}/api/agent/test-runs`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${testerAgentToken}` },
@@ -190,7 +211,8 @@ try {
   const { device } = await imported.json();
   createdDeviceId = device.id;
   if (device.lifecycleStatus !== "Ready" || device.sale || device.warrantyEnds) throw new Error("A new verified passport did not enter the Ready lifecycle state.");
-  if (device.diagnostics?.batteryCycleCount !== 184 || device.diagnostics?.storagePowerOnHours !== 1842 || device.diagnostics?.cpuStressPassed !== true || device.diagnostics?.cpuStressCompletedWorkers !== 4 || device.diagnostics?.cpuPeakTemperatureC !== 72) throw new Error("Tester V2 evidence was not preserved on the device record.");
+  if (device.diagnostics?.batteryCycleCount !== 184 || device.diagnostics?.storagePowerOnHours !== 1842 || device.diagnostics?.cpuStressPassed !== true || device.diagnostics?.cpuStressCompletedWorkers !== 4 || device.diagnostics?.cpuPeakTemperatureC !== 72) throw new Error("Automatic diagnostic evidence was not preserved on the device record.");
+  if (!device.diagnostics?.serverSignatureVerified || device.diagnostics?.verifiedAgentName !== testerAgentName || device.diagnostics?.interactiveTests?.length !== 6 || device.diagnostics.interactiveTests.some((test) => test.status !== "pass")) throw new Error("Signed Tester V4 interactive evidence was not preserved on the device record.");
   const importedInbox = await expectOk(await fetch(`${baseUrl}/api/test-runs`, { headers: { cookie } }), "Imported report removal");
   if ((await importedInbox.json()).testRuns.some((item) => item.id === uploadedTestRun.id)) throw new Error("An imported connected report remained in the pending inbox.");
 
@@ -244,8 +266,9 @@ try {
   const passport = await expectOk(await fetch(`${baseUrl}/passport/${device.id}`), "Public passport");
   const passportHtml = await passport.text();
   if (!passportHtml.includes("Smoke-test evidence note")) throw new Error("Technician notes were not rendered.");
-  if (!passportHtml.includes("184 cycles") || !passportHtml.includes("1,842 power-on hours") || !passportHtml.includes("4/4 workers completed") || !passportHtml.includes("72°C peak")) throw new Error("The public passport did not render Tester V2 diagnostic evidence.");
+  if (!passportHtml.includes("184 cycles") || !passportHtml.includes("1,842 power-on hours") || !passportHtml.includes("4/4 workers completed") || !passportHtml.includes("72°C peak")) throw new Error("The public passport did not render automatic diagnostic evidence.");
   if (!passportHtml.includes("Activates at customer handover")) throw new Error("The unsold passport did not show its activation state.");
+  if (!passportHtml.includes("Interactive test evidence") || !passportHtml.includes("60/60 common keyboard keys detected") || !passportHtml.includes("Agent signature verified")) throw new Error("The public passport did not render signed Tester V4 evidence.");
   const photoPath = passportHtml.match(/\/api\/public\/passports\/[^"']+\/photos\/[^"']+/)?.[0];
   if (!photoPath) throw new Error("The evidence photo URL was not rendered.");
 
@@ -254,6 +277,11 @@ try {
   const label = await expectOk(await fetch(`${baseUrl}/label/${device.id}`), "Print label");
   const labelHtml = await label.text();
   if (!labelHtml.includes("40 × 25 mm")) throw new Error("The printable label page was not rendered.");
+  const testSummary = await expectOk(await fetch(`${baseUrl}/test-summary/${device.id}`, { headers: { cookie } }), "Printable test summary");
+  const testSummaryHtml = await testSummary.text();
+  if (!testSummaryHtml.includes("Device test &amp; failure summary") || !testSummaryHtml.includes("Interactive hardware suite") || !testSummaryHtml.includes(testerAgentName) || !testSummaryHtml.includes("No failed checks recorded")) throw new Error("The printable Tester V4 summary did not render complete signed evidence.");
+  const unauthenticatedTestSummary = await fetch(`${baseUrl}/test-summary/${device.id}`, { redirect: "manual" });
+  if (![303, 307, 308].includes(unauthenticatedTestSummary.status)) throw new Error(`Unauthenticated test summary expected a redirect, received ${unauthenticatedTestSummary.status}.`);
 
   const activation = await expectOk(await fetch(`${baseUrl}/api/devices/${device.id}/activate`, {
     method: "POST",
@@ -489,7 +517,10 @@ try {
     signedUpload: signedUpload.status,
     tamperedUploadDenied: tamperedUpload.status,
     replayUploadDenied: replayUpload.status,
+    mismatchedSignedCheckDenied: mismatchedSignedCheck.status,
     connectedInbox: connectedInbox.status,
+    testSummary: testSummary.status,
+    testSummaryProtected: unauthenticatedTestSummary.status,
     supportTesterAgentsDenied: forbiddenTesterAgents.status,
     supportTestRunsDenied: forbiddenTestRuns.status,
     supportProcurementDenied: forbiddenProcurement.status,

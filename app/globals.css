@@ -1551,9 +1551,15 @@ a {
 }
 
 .passport-notes,
-.passport-evidence {
+.passport-evidence,
+.passport-interactive {
   margin-top: 25px;
 }
+
+.interactive-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 13px; }
+.interactive-heading .section-title { margin-bottom: 4px; }
+.interactive-heading p { margin: 0; color: var(--muted); font-size: 8px; }
+.interactive-heading > span { flex: 0 0 auto; padding: 5px 8px; border-radius: 999px; color: #1d6b49; background: #e8f8ec; font-size: 7px; font-weight: 850; text-transform: uppercase; }
 
 .passport-notes p {
   margin: 0;
@@ -3936,6 +3942,21 @@ a {
 .job-sheet-signatures > div { padding-top: 7px; border-top: 1px solid #7f8b84; }
 .job-sheet-signatures span { color: var(--muted); font-size: 8px; }
 .job-sheet-footer { margin: 28px 0 0; color: #87928c; font-size: 7px; text-align: center; }
+.summary-result { display: inline-flex; width: fit-content; padding: 5px 8px; border-radius: 999px; color: #69716d; background: #ecefed; font-size: 7px; font-weight: 850; font-style: normal; text-transform: uppercase; }
+.summary-result.pass { color: #216b4b; background: #e8f8ec; }
+.summary-result.review { color: #a14141; background: #ffeded; }
+.summary-test-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.summary-test-list article { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: start; gap: 9px; padding: 11px; border: 1px solid var(--line); border-radius: 9px; }
+.summary-test-list article, .failure-summary-list li { break-inside: avoid; }
+.summary-test-list article div { display: grid; gap: 4px; }
+.summary-test-list article strong { font-size: 9px; }
+.summary-test-list article p { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.45; }
+.summary-notes { margin-top: 10px; padding: 12px; border-radius: 9px; background: #f6f8f5; }
+.summary-notes strong { font-size: 9px; }
+.summary-notes p { margin: 6px 0 0; font-size: 9px; white-space: pre-wrap; }
+.failure-summary-list { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.failure-summary-list li { padding: 10px 12px; border-left: 3px solid #d76a6a; color: #7c3131; background: #fff2f2; font-size: 9px; }
+.pass-issue { border-left-color: var(--forest-2); background: #f0f8f1; }
 
 .procurement-section-head { align-items: center; }
 .procurement-section-head p { margin: 7px 0 0; color: var(--muted); font-size: 11px; }
@@ -4322,6 +4343,7 @@ a {
   .job-sheet-header { flex-direction: column; }
   .job-sheet-id { justify-items: start; }
   .job-sheet-summary, .job-sheet-grid { grid-template-columns: repeat(2, 1fr); }
+  .summary-test-list { grid-template-columns: 1fr; }
   .job-sheet-signatures { grid-template-columns: 1fr; }
 }
 

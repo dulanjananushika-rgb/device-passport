@@ -14,11 +14,18 @@ export async function POST(request: Request) {
   const payload = await request.json().catch(() => null);
   const testRunId = typeof payload?.testRunId === "string" ? payload.testRunId : "";
   const connectedRun = testRunId ? getPendingTestRun(testRunId) : null;
-  const report = connectedRun?.report ?? payload?.report;
+  const sourceReport = connectedRun?.report ?? payload?.report;
   if (testRunId && !connectedRun) return NextResponse.json({ error: "This connected test report is no longer available." }, { status: 409 });
-  if (!report || typeof report !== "object" || !payload?.checks) {
+  if (!sourceReport || typeof sourceReport !== "object" || !payload?.checks) {
     return NextResponse.json({ error: "A valid diagnostic JSON report is required." }, { status: 400 });
   }
+  const report = structuredClone(sourceReport);
+  report.integrity = {
+    ...(report.integrity && typeof report.integrity === "object" ? report.integrity : {}),
+    serverSignatureVerified: Boolean(connectedRun),
+    verifiedTestRunId: connectedRun?.id ?? "",
+    verifiedAgentName: connectedRun?.agentName ?? "",
+  };
 
   try {
     const device = createDeviceFromReport(

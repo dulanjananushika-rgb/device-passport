@@ -33,7 +33,8 @@ DevicePassport is an independent shop system for refurbished laptop health repor
 - Docker deployment with a persistent database/backup volume
 - Windows PowerShell diagnostic collector
 - Tester V2 battery-cycle, SSD power-on-hour/temperature/wear, memory-load, and CPU stability evidence
-- Tester V3 Windows agent with one-click tests, HMAC-signed uploads, device photos, and an offline retry queue
+- Tester V4 Windows agent with guided screen, keyboard, camera, stereo-audio, ports, and wireless tests
+- One-click current-user installer, native camera capture workflow, signed interactive evidence, printable failure summaries, and an offline retry queue
 - Connected report inbox plus Owner-managed, revocable per-station credentials
 - Consolidated service history on the buyer's private warranty QR card
 
@@ -155,18 +156,27 @@ Purchase price and supplier profit fields are Owner-only. Technicians receive th
 
 1. Sign in as an Owner and open **Settings -> Windows tester stations**.
 2. Create one station for each Windows test-bench laptop and copy the token shown once.
-3. Copy the `tools/windows` folder to that laptop and start:
+3. Copy the `tools/windows` folder to that laptop and double-click `install-device-passport-tester.cmd`. It installs for the current Windows user, adds Desktop and Start Menu shortcuts, and launches the tester. The command-line equivalent is:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\windows\start-device-passport-tester.ps1
+powershell -ExecutionPolicy Bypass -File .\tools\windows\install-device-passport-tester.ps1 -Launch
 ```
 
 4. Enter the standalone DevicePassport server URL and station token. The token is protected with Windows DPAPI for the current Windows user rather than stored as plaintext.
-5. Complete the screen, keyboard, webcam, audio, ports, and wireless checks. Add up to four actual device photos; **Open Camera** launches Windows Camera when a new photo is needed.
-6. Choose **Run full test + upload**. The agent shows each phase while it collects hardware evidence, runs the controlled CPU test, signs the exact report JSON, and uploads it.
+5. Choose **Run all interactive tests** for the full guided suite, or use an individual **Test** button to repeat one check:
+   - six-colour full-screen panel/dead-pixel inspection;
+   - 60-key common keyboard matrix with live detection;
+   - native Windows Camera preview, capture discovery, visual approval, and automatic photo attachment;
+   - generated left/right stereo speaker tones;
+   - USB/display/charging evidence plus technician confirmation;
+   - Wi-Fi adapter, Bluetooth device, and DevicePassport server connectivity verification.
+6. Choose **Run full test + upload**. The agent collects battery/SSD/RAM/CPU/BIOS evidence, runs the controlled CPU test, puts every interactive/manual result inside the signed JSON, and uploads it.
 7. Open **New device test -> Connected Windows reports** in the dashboard, select the verified result, review it, and approve the passport. A matching stock-intake serial is linked automatically.
+8. Open the public passport to see the signed interactive evidence, or choose **Print test summary** for the internal A4 pass/failure sheet.
 
-Every upload uses a per-station HMAC-SHA256 signature. The server stores only the token hash, rejects modified reports, revoked tokens, duplicate serials, and replayed signatures, and records the station's last upload. If the server is unavailable, the signed envelope is saved under the current Windows user's local app data and can be sent later with **Retry offline queue**.
+Every upload uses a per-station HMAC-SHA256 signature. The server stores only the token hash, validates that submitted checks match the values inside Tester V4's signed JSON, rejects modified reports, revoked tokens, duplicate serials, and replayed signatures, and records the station's last upload. If the server is unavailable, the signed envelope is saved under the current Windows user's local app data and can be sent later with **Retry offline queue**.
+
+Uninstall with `uninstall-device-passport-tester.ps1`. The uninstall keeps the encrypted station configuration and offline queue under `%LOCALAPPDATA%\DevicePassport` so pending reports are not silently destroyed.
 
 ## Manual Windows collector fallback
 
