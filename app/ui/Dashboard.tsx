@@ -5,7 +5,7 @@ import Image from "next/image";
 import type { DeviceRecord } from "../data/devices";
 import type { StaffSession } from "../../lib/auth";
 import { claimStatuses, type ClaimStatus, type WarrantyClaimSummary } from "../../lib/claims";
-import { staffRoles, type AuditEvent, type ShopSettings, type StaffAccount, type StaffRole } from "../../lib/operations";
+import { canActivateSales, staffRoles, type AuditEvent, type ShopSettings, type StaffAccount, type StaffRole } from "../../lib/operations";
 import {
   calculateInspectionScore,
   inspectionKeys,
@@ -16,13 +16,15 @@ import {
   type InspectionKey,
   type InspectionPhotoInput,
 } from "../../lib/inspection";
+import { SalesPanel } from "./SalesPanel";
 
-type View = "overview" | "devices" | "warranties" | "reports" | "staff" | "settings";
+type View = "overview" | "devices" | "sales" | "warranties" | "reports" | "staff" | "settings";
 type WizardStage = 1 | 2 | 3;
 
 const viewTitles: Record<View, { eyebrow: string; title: string }> = {
   overview: { eyebrow: "Operations", title: "Shop overview" },
   devices: { eyebrow: "Inventory", title: "Device passports" },
+  sales: { eyebrow: "Customer handover", title: "Sales activation" },
   warranties: { eyebrow: "After-sales", title: "Warranty claims" },
   reports: { eyebrow: "Performance", title: "Health reports" },
   staff: { eyebrow: "Access control", title: "Staff accounts" },
@@ -56,6 +58,7 @@ export function Dashboard({ initialDevices, initialClaims, initialStaff, initial
   const [createdDevice, setCreatedDevice] = useState<DeviceRecord | null>(null);
   const [importError, setImportError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [referenceTime] = useState(() => Date.now());
 
   const checksComplete = inspectionKeys.every((key) => checks[key] === "pass" || checks[key] === "fail");
   const scorePreview = imported && checksComplete
@@ -66,7 +69,7 @@ export function Dashboard({ initialDevices, initialClaims, initialStaff, initial
     const needle = query.trim().toLowerCase();
     if (!needle) return records;
     return records.filter((device) =>
-      [device.name, device.id, device.serial, device.model].join(" ").toLowerCase().includes(needle),
+      [device.name, device.id, device.serial, device.model, device.sale?.customerName, device.sale?.customerEmail, device.sale?.customerPhone, device.sale?.invoiceReference].filter(Boolean).join(" ").toLowerCase().includes(needle),
     );
   }, [query, records]);
 
@@ -156,11 +159,22 @@ export function Dashboard({ initialDevices, initialClaims, initialStaff, initial
   }
 
   const title = viewTitles[view];
-  const publishedCount = records.filter((device) => device.status === "Published").length;
   const reviewCount = records.filter((device) => device.status === "Needs review").length;
   const openClaimCount = claims.filter((claim) => claim.status !== "Completed" && claim.status !== "Rejected").length;
   const canTestDevices = session.role === "Owner" || session.role === "Technician";
+  const canActivateDeviceSales = canActivateSales(session.role);
   const isOwner = session.role === "Owner";
+  const readyCount = records.filter((device) => device.lifecycleStatus === "Ready").length;
+  const soldCount = records.filter((device) => device.lifecycleStatus === "Sold").length;
+  const expiringCount = records.filter((device) => {
+    const expiry = Date.parse(device.sale?.warrantyEnds ?? "");
+    const days = (expiry - referenceTime) / 86_400_000;
+    return days >= 0 && days <= 30;
+  }).length;
+
+  function updateDevice(updated: DeviceRecord) {
+    setRecords((current) => current.map((device) => device.id === updated.id ? updated : device));
+  }
 
   async function refreshAudit() {
     if (!isOwner) return;
@@ -181,6 +195,7 @@ export function Dashboard({ initialDevices, initialClaims, initialStaff, initial
         <div className="nav-stack">
           <NavButton icon="H" label="Overview" active={view === "overview"} onClick={() => setView("overview")} />
           <NavButton icon="D" label="Devices" active={view === "devices"} onClick={() => setView("devices")} />
+          <NavButton icon="$" label="Sales" active={view === "sales"} onClick={() => setView("sales")} />
           <NavButton icon="C" label="Claims" active={view === "warranties"} onClick={() => setView("warranties")} />
           <NavButton icon="R" label="Reports" active={view === "reports"} onClick={() => setView("reports")} />
           {isOwner && <NavButton icon="T" label="Staff" active={view === "staff"} onClick={() => setView("staff")} />}
@@ -204,9 +219,10 @@ export function Dashboard({ initialDevices, initialClaims, initialStaff, initial
         </header>
 
         {view === "overview" && (
-          <Overview records={records} publishedCount={publishedCount} reviewCount={reviewCount} openClaimCount={openClaimCount} canCreate={canTestDevices} onNewTest={() => setModalOpen(true)} onViewDevices={() => setView("devices")} />
+          <Overview records={records} readyCount={readyCount} soldCount={soldCount} expiringCount={expiringCount} reviewCount={reviewCount} openClaimCount={openClaimCount} canCreate={canTestDevices} onNewTest={() => setModalOpen(true)} onViewDevices={() => setView("devices")} onViewSales={() => setView("sales")} />
         )}
         {view === "devices" && <DeviceList devices={filteredDevices} query={query} onQuery={setQuery} onNewTest={() => setModalOpen(true)} canCreate={canTestDevices} />}
+        {view === "sales" && <SalesPanel devices={records} canActivate={canActivateDeviceSales} warrantyMonths={settings.warrantyMonths} onDeviceChange={updateDevice} onAuditChange={refreshAudit} />}
         {view === "warranties" && <Warranties records={records} claims={claims} onClaimUpdate={(updated) => setClaims((current) => current.map((claim) => claim.id === updated.id ? updated : claim))} />}
         {view === "reports" && <Reports records={records} />}
         {view === "staff" && isOwner && <StaffPanel staff={staff} audit={audit} currentStaffId={session.id} onStaffChange={setStaff} onAuditChange={refreshAudit} />}
@@ -271,18 +287,18 @@ function NavButton({ icon, label, active, onClick }: { icon: string; label: stri
   return <button className={`nav-item ${active ? "active" : ""}`} onClick={onClick} aria-current={active ? "page" : undefined}><span className="nav-icon" aria-hidden="true">{icon}</span><span>{label}</span></button>;
 }
 
-function Overview({ records, publishedCount, reviewCount, openClaimCount, canCreate, onNewTest, onViewDevices }: { records: DeviceRecord[]; publishedCount: number; reviewCount: number; openClaimCount: number; canCreate: boolean; onNewTest: () => void; onViewDevices: () => void }) {
+function Overview({ records, readyCount, soldCount, expiringCount, reviewCount, openClaimCount, canCreate, onNewTest, onViewDevices, onViewSales }: { records: DeviceRecord[]; readyCount: number; soldCount: number; expiringCount: number; reviewCount: number; openClaimCount: number; canCreate: boolean; onNewTest: () => void; onViewDevices: () => void; onViewSales: () => void }) {
   const latest = records[0];
   return (
     <>
       <section className="hero">
-        <div className="hero-copy"><div className="hero-kicker">Trust, made visible</div><h2>Every refurbished laptop deserves proof.</h2><p>Run a consistent health test, publish a transparent device passport, and keep the warranty in one place from intake to after-sales.</p><div className="hero-actions">{canCreate && <button className="button primary" onClick={onNewTest}>+ Test a laptop</button>}{latest && <a className="button secondary" href={`/passport/${latest.id}`}>View customer passport</a>}</div></div>
+        <div className="hero-copy"><div className="hero-kicker">Trust, made visible</div><h2>Every refurbished laptop deserves proof.</h2><p>Run a consistent health test, activate coverage at handover, and keep the warranty in one place from intake to after-sales.</p><div className="hero-actions">{canCreate && <button className="button primary" onClick={onNewTest}>+ Test a laptop</button>}{readyCount > 0 && <button className="button secondary" onClick={onViewSales}>Activate a sale</button>}{latest && <a className="text-link hero-passport-link" href={`/passport/${latest.id}`}>Open latest passport</a>}</div></div>
         {latest && <div className="hero-proof" aria-label="Latest verified device summary"><div className="proof-top"><div><div className="proof-label">Latest passport</div><div className="proof-device">{latest.name}</div></div><div className="grade-badge">{latest.grade}</div></div><div className="health-meter"><div className="health-row"><span>Overall health</span><strong>{latest.score} / 100</strong></div><div className="meter"><span style={{ width: `${latest.score}%` }} /></div></div><div className="proof-meta"><div><span>Battery</span><strong>{latest.batteryHealth}% health</strong></div><div><span>Storage</span><strong>{latest.storageHealth}% healthy</strong></div><div><span>Test ID</span><strong>{latest.id}</strong></div><div><span>Status</span><strong>{latest.status}</strong></div></div></div>}
       </section>
-      <section className="stats" aria-label="Business summary"><Stat label="Total passports" value={String(records.length)} indicator="Live DB" /><Stat label="Published devices" value={String(publishedCount)} indicator={`${Math.round((publishedCount / Math.max(records.length, 1)) * 100)}%`} /><Stat label="Needs review" value={String(reviewCount)} indicator={reviewCount ? "Attention" : "Clear"} /><Stat label="Open claims" value={String(openClaimCount)} indicator={openClaimCount ? "Action needed" : "Clear"} /></section>
+      <section className="stats" aria-label="Business summary"><Stat label="Total passports" value={String(records.length)} indicator="Live DB" /><Stat label="Ready to sell" value={String(readyCount)} indicator="Verified stock" /><Stat label="Warranties activated" value={String(soldCount)} indicator="Customer handovers" /><Stat label="Expiring in 30 days" value={String(expiringCount)} indicator={expiringCount ? "Follow up" : "Clear"} /></section>
       <section className="content-grid">
         <div className="panel"><div className="panel-head"><div><h3 className="panel-title">Recent device tests</h3><p className="panel-subtitle">Saved in your standalone database</p></div><button className="text-link" onClick={onViewDevices}>View all</button></div><DeviceTable devices={records.slice(0, 4)} /></div>
-        <div className="panel"><div className="panel-head"><div><h3 className="panel-title">System status</h3><p className="panel-subtitle">Independent Next.js stack</p></div></div><div className="activity-list"><Activity icon="DB" title="Local database connected" body={`${records.length} device records available`} time="Live" /><Activity icon="API" title="Report upload API" body="Authenticated technician endpoint" time="Ready" /><Activity icon="QR" title="Public passports" body="Customers do not need an account" time="Open" /></div></div>
+        <div className="panel"><div className="panel-head"><div><h3 className="panel-title">Action centre</h3><p className="panel-subtitle">What needs the shop team next</p></div></div><div className="activity-list"><Activity icon="$" title="Ready for handover" body={`${readyCount} verified device${readyCount === 1 ? "" : "s"} waiting for a buyer`} time={readyCount ? "Open" : "Clear"} /><Activity icon="QC" title="Inspection review" body={`${reviewCount} passport${reviewCount === 1 ? "" : "s"} need attention`} time={reviewCount ? "Review" : "Clear"} /><Activity icon="C" title="Warranty inbox" body={`${openClaimCount} open customer claim${openClaimCount === 1 ? "" : "s"}`} time={openClaimCount ? "Action" : "Clear"} /></div></div>
       </section>
     </>
   );
@@ -624,7 +640,7 @@ function Stat({ label, value, indicator }: { label: string; value: string; indic
 
 function DeviceTable({ devices }: { devices: DeviceRecord[] }) {
   if (!devices.length) return <div className="empty-state">No devices in this list.</div>;
-  return <div className="table-wrap"><table className="device-table"><thead><tr><th>Device</th><th>Health</th><th>Grade</th><th>Status</th><th>Passport</th></tr></thead><tbody>{devices.map((device) => <tr key={device.id}><td><div className="device-cell"><span className="device-thumb">PC</span><span><span className="device-name">{device.name}</span><span className="device-id">{device.id} | {device.serial}</span></span></div></td><td><span className="score">{device.score}</span>/100</td><td><span className="grade-badge" style={{ width: 31, height: 31, borderRadius: 10, fontSize: 12 }}>{device.grade}</span></td><td><span className={`status-pill ${device.status === "Published" ? "published" : device.status === "Needs review" ? "review" : ""}`}>{device.status}</span></td><td><a className="button secondary small" href={`/passport/${device.id}`}>Open</a></td></tr>)}</tbody></table></div>;
+  return <div className="table-wrap"><table className="device-table"><thead><tr><th>Device</th><th>Health</th><th>Grade</th><th>Lifecycle</th><th>Passport</th></tr></thead><tbody>{devices.map((device) => <tr key={device.id}><td><div className="device-cell"><span className="device-thumb">PC</span><span><span className="device-name">{device.name}</span><span className="device-id">{device.id} | {device.serial}</span></span></div></td><td><span className="score">{device.score}</span>/100</td><td><span className="grade-badge" style={{ width: 31, height: 31, borderRadius: 10, fontSize: 12 }}>{device.grade}</span></td><td><span className={`status-pill lifecycle-${device.lifecycleStatus.toLowerCase()}`}>{device.lifecycleStatus}</span></td><td><a className="button secondary small" href={`/passport/${device.id}`}>Open</a></td></tr>)}</tbody></table></div>;
 }
 
 function Activity({ icon, title, body, time }: { icon: string; title: string; body: string; time: string }) {

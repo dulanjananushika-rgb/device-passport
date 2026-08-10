@@ -7,13 +7,14 @@ import { claimCategories, type ClaimPhotoInput } from "../../../../lib/claims";
 
 type ClaimFormProps = {
   deviceId: string;
+  initialCustomer?: { name: string; email: string; phone: string };
 };
 
-export function ClaimForm({ deviceId }: ClaimFormProps) {
+export function ClaimForm({ deviceId, initialCustomer }: ClaimFormProps) {
   const router = useRouter();
-  const [customerName, setCustomerName] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerName, setCustomerName] = useState(initialCustomer?.name ?? "");
+  const [customerEmail, setCustomerEmail] = useState(initialCustomer?.email ?? "");
+  const [customerPhone, setCustomerPhone] = useState(initialCustomer?.phone ?? "");
   const [category, setCategory] = useState<(typeof claimCategories)[number]>("Battery");
   const [description, setDescription] = useState("");
   const [photos, setPhotos] = useState<ClaimPhotoInput[]>([]);

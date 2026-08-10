@@ -38,6 +38,10 @@ export function canCreatePassports(role: StaffRole) {
   return role === "Owner" || role === "Technician";
 }
 
+export function canActivateSales(role: StaffRole) {
+  return role === "Owner" || role === "Technician";
+}
+
 export function canManageStaff(role: StaffRole) {
   return role === "Owner";
 }

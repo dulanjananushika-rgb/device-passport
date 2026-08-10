@@ -7,6 +7,7 @@ const serial = `CODEX-SMOKE-${runId}`;
 const staffEmail = `smoke-${runId}@example.com`;
 const temporaryPassword = "SmokePass!234";
 const changedPassword = "SmokePass!567";
+const invoiceReference = `SMOKE-INV-${runId}`;
 const tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 let createdDeviceId = "";
 let createdClaimId = "";
@@ -79,10 +80,19 @@ try {
   }), "Report import");
   const { device } = await imported.json();
   createdDeviceId = device.id;
+  if (device.lifecycleStatus !== "Ready" || device.sale || device.warrantyEnds) throw new Error("A new verified passport did not enter the Ready lifecycle state.");
+
+  const forbiddenActivation = await fetch(`${baseUrl}/api/devices/${device.id}/activate`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: changedStaffCookie },
+    body: JSON.stringify({ customerName: "Smoke Test Customer", customerPhone: "+94 77 000 0000", customerEmail: "", invoiceReference, soldAt: new Date().toISOString().slice(0, 10) }),
+  });
+  if (forbiddenActivation.status !== 403) throw new Error(`Support sale activation permission expected 403, received ${forbiddenActivation.status}.`);
 
   const passport = await expectOk(await fetch(`${baseUrl}/passport/${device.id}`), "Public passport");
   const passportHtml = await passport.text();
   if (!passportHtml.includes("Smoke-test evidence note")) throw new Error("Technician notes were not rendered.");
+  if (!passportHtml.includes("Activates at customer handover")) throw new Error("The unsold passport did not show its activation state.");
   const photoPath = passportHtml.match(/\/api\/public\/passports\/[^"']+\/photos\/[^"']+/)?.[0];
   if (!photoPath) throw new Error("The evidence photo URL was not rendered.");
 
@@ -91,6 +101,36 @@ try {
   const label = await expectOk(await fetch(`${baseUrl}/label/${device.id}`), "Print label");
   const labelHtml = await label.text();
   if (!labelHtml.includes("40 × 25 mm")) throw new Error("The printable label page was not rendered.");
+
+  const activation = await expectOk(await fetch(`${baseUrl}/api/devices/${device.id}/activate`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({
+      customerName: "Smoke Test Customer",
+      customerEmail: "smoke@example.com",
+      customerPhone: "+94 77 000 0000",
+      invoiceReference,
+      soldAt: new Date().toISOString().slice(0, 10),
+    }),
+  }), "Sale activation");
+  const { device: activatedDevice } = await activation.json();
+  if (activatedDevice.lifecycleStatus !== "Sold" || !activatedDevice.sale?.handoverToken || !activatedDevice.sale?.warrantyEnds) throw new Error("The sale did not activate a customer warranty.");
+
+  const duplicateActivation = await fetch(`${baseUrl}/api/devices/${device.id}/activate`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ customerName: "Duplicate Customer", customerPhone: "+94 77 111 1111", customerEmail: "", invoiceReference: `${invoiceReference}-DUP`, soldAt: new Date().toISOString().slice(0, 10) }),
+  });
+  if (duplicateActivation.status !== 400) throw new Error(`Duplicate sale activation expected 400, received ${duplicateActivation.status}.`);
+
+  const salesResponse = await expectOk(await fetch(`${baseUrl}/api/sales`, { headers: { cookie } }), "Sales inventory");
+  const salesPayload = await salesResponse.json();
+  if (!salesPayload.devices.some((item) => item.id === device.id && item.sale?.invoiceReference === invoiceReference)) throw new Error("The activated sale was not returned by the sales API.");
+  const migratedSeed = salesPayload.devices.find((item) => item.id === "DVP-LK-240831");
+  if (migratedSeed?.sale?.warrantyEnds !== "2027-02-10" || migratedSeed.sale.soldAt !== "2026-08-10") throw new Error("The legacy sale migration changed a calendar date.");
+  const warrantyCard = await expectOk(await fetch(`${baseUrl}/warranty/${activatedDevice.sale.handoverToken}`), "Private warranty card");
+  const warrantyCardHtml = await warrantyCard.text();
+  if (!warrantyCardHtml.includes(invoiceReference) || !warrantyCardHtml.includes("Smoke Test Customer")) throw new Error("The private warranty card did not render the handover details.");
 
   const claimSubmission = await expectOk(await fetch(`${baseUrl}/api/public/passports/${device.id}/claims`, {
     method: "POST",
@@ -135,6 +175,9 @@ try {
     passport: passport.status,
     photo: photo.status,
     label: label.status,
+    activation: activation.status,
+    warrantyCard: warrantyCard.status,
+    sales: salesResponse.status,
     claim: claimSubmission.status,
     tracker: tracker.status,
     claimPhoto: claimPhoto.status,
@@ -146,6 +189,8 @@ try {
     roleUpdate: roleUpdate.status,
     supportReportDenied: forbiddenReport.status,
     supportStaffDenied: forbiddenStaff.status,
+    supportSaleDenied: forbiddenActivation.status,
+    duplicateSaleDenied: duplicateActivation.status,
     audit: auditResponse.status,
     deviceId: device.id,
     claimId: claim.id,

@@ -27,7 +27,7 @@ export default async function PassportPage({ params }: PassportPageProps) {
   if (!device) notFound();
   const evidence = getPassportEvidence(device.id);
   const settings = getShopSettings();
-  const warrantyActive = isWarrantyActive(device.warrantyEnds);
+  const warrantyActive = isWarrantyActive(device.sale?.warrantyEnds ?? "");
 
   return (
     <main className="passport-page">
@@ -120,16 +120,16 @@ export default async function PassportPage({ params }: PassportPageProps) {
               </Link>
               <div className="warranty-card">
                 <span>Digital warranty</span>
-                <strong>{warrantyActive ? `Active until ${device.warrantyEnds}` : `Ended ${device.warrantyEnds}`}</strong>
+                <strong>{!device.sale ? "Activates at customer handover" : warrantyActive ? `Active until ${formatSaleDate(device.sale.warrantyEnds)}` : `Ended ${formatSaleDate(device.sale.warrantyEnds)}`}</strong>
                 <div className="meter"><span style={{ width: warrantyActive ? "72%" : "0%" }} /></div>
-                <small>{warrantyActive ? "Hardware coverage from the verified seller" : "Service requests remain available for shop review"}</small>
+                <small>{!device.sale ? "Coverage starts from the recorded sale date" : warrantyActive ? "Hardware coverage from the verified seller" : "Service requests remain available for shop review"}</small>
               </div>
               <p className="warranty-public-terms">{settings.warrantyTerms}</p>
               <div className="seller-card">
-                <strong>Sold and verified by {settings.shopName}</strong>
+                <strong>{device.sale ? "Sold and verified" : "Inspected and verified"} by {settings.shopName}</strong>
                 <span>{settings.address} • {settings.phone}</span>
               </div>
-              <Link className="button primary" href={`/passport/${device.id}/claim`} style={{ width: "100%", marginTop: 13 }}>Start warranty claim</Link>
+              {device.sale ? <><Link className="button secondary" href={`/warranty/${device.sale.handoverToken}`} style={{ width: "100%", marginTop: 13 }}>Open digital warranty</Link><Link className="button primary" href={`/passport/${device.id}/claim`} style={{ width: "100%", marginTop: 9 }}>Start warranty claim</Link></> : <span className="button disabled-button" style={{ width: "100%", marginTop: 13 }}>Warranty not activated</span>}
             </aside>
           </div>
         </article>
@@ -157,4 +157,9 @@ function Spec({ label, value }: { label: string; value: string }) {
 function formatApprovalDate(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function formatSaleDate(value: string) {
+  const date = new Date(`${value}T12:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("en-GB", { dateStyle: "medium", timeZone: "UTC" });
 }

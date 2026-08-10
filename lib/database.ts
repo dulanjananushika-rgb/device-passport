@@ -26,6 +26,7 @@ import {
   type StaffAccount,
   type StaffRole,
 } from "./operations";
+import type { DeviceSale, SaleActivationInput } from "./sales";
 
 type DeviceRow = {
   id: string;
@@ -43,6 +44,25 @@ type DeviceRow = {
   technician: string;
   warranty_ends: string;
   status: "Published" | "Needs review" | "Draft";
+};
+
+type DeviceWithSaleRow = DeviceRow & {
+  sale_customer_name: string | null;
+  sale_customer_email: string | null;
+  sale_customer_phone: string | null;
+  sale_invoice_reference: string | null;
+  sale_sold_at: string | null;
+  sale_warranty_starts: string | null;
+  sale_warranty_ends: string | null;
+  sale_handover_token: string | null;
+  sale_activated_by: string | null;
+  sale_created_at: string | null;
+};
+
+type LegacySaleRow = {
+  id: string;
+  warranty_ends: string;
+  tested_at: string;
 };
 
 type InspectionRow = {
@@ -205,8 +225,29 @@ function ensureOperationsSchema(database: DatabaseSync) {
       summary TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS device_sales (
+      device_id TEXT PRIMARY KEY,
+      customer_name TEXT NOT NULL,
+      customer_email TEXT NOT NULL DEFAULT '',
+      customer_phone TEXT NOT NULL DEFAULT '',
+      invoice_reference TEXT NOT NULL UNIQUE,
+      sold_at TEXT NOT NULL,
+      warranty_starts TEXT NOT NULL,
+      warranty_ends TEXT NOT NULL,
+      handover_token TEXT NOT NULL UNIQUE,
+      activated_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS app_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
     CREATE INDEX IF NOT EXISTS idx_staff_users_email ON staff_users(email);
     CREATE INDEX IF NOT EXISTS idx_audit_events_created ON audit_events(created_at);
+    CREATE INDEX IF NOT EXISTS idx_device_sales_customer_phone ON device_sales(customer_phone);
+    CREATE INDEX IF NOT EXISTS idx_device_sales_customer_email ON device_sales(customer_email);
+    CREATE INDEX IF NOT EXISTS idx_device_sales_warranty_ends ON device_sales(warranty_ends);
   `);
 
   const now = new Date().toISOString();
@@ -231,10 +272,80 @@ function ensureOperationsSchema(database: DatabaseSync) {
   }
 }
 
+function backfillExistingSales(database: DatabaseSync) {
+  const migration = database.prepare("SELECT value FROM app_meta WHERE key = 'phase5_sales_backfill'").get();
+  if (migration) return;
+
+  const settings = readShopSettings(database);
+  const devices = database.prepare("SELECT id, warranty_ends, tested_at FROM devices").all() as unknown as LegacySaleRow[];
+  const insert = database.prepare(`
+    INSERT OR IGNORE INTO device_sales (
+      device_id, customer_name, customer_email, customer_phone, invoice_reference,
+      sold_at, warranty_starts, warranty_ends, handover_token, activated_by, created_at
+    ) VALUES (?, 'Registered customer', '', '', ?, ?, ?, ?, ?, 'Legacy migration', ?)
+  `);
+
+  database.exec("BEGIN");
+  try {
+    for (const device of devices) {
+      const parsedEnd = parseWarrantyDate(device.warranty_ends);
+      const warrantyEnd = !parsedEnd
+        ? addCalendarMonths(new Date(), settings.warrantyMonths)
+        : parsedEnd;
+      const warrantyStart = parseWarrantyDate(device.tested_at) ?? addCalendarMonths(warrantyEnd, -settings.warrantyMonths);
+      const createdAt = new Date().toISOString();
+      insert.run(
+        device.id,
+        `LEGACY-${device.id}`,
+        toIsoDate(warrantyStart),
+        toIsoDate(warrantyStart),
+        toIsoDate(warrantyEnd),
+        randomBytes(18).toString("base64url"),
+        createdAt,
+      );
+    }
+    database.prepare("INSERT INTO app_meta (key, value) VALUES ('phase5_sales_backfill', ?)").run(new Date().toISOString());
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function correctLegacySaleDates(database: DatabaseSync) {
+  const migration = database.prepare("SELECT value FROM app_meta WHERE key = 'phase5_sales_backfill_dates_v3'").get();
+  if (migration) return;
+  const settings = readShopSettings(database);
+  const devices = database.prepare(`
+    SELECT d.id, d.warranty_ends, d.tested_at
+    FROM devices d
+    JOIN device_sales s ON s.device_id = d.id
+    WHERE s.invoice_reference LIKE 'LEGACY-%'
+  `).all() as unknown as LegacySaleRow[];
+  const update = database.prepare("UPDATE device_sales SET sold_at = ?, warranty_starts = ?, warranty_ends = ? WHERE device_id = ?");
+
+  database.exec("BEGIN");
+  try {
+    for (const device of devices) {
+      const warrantyEnd = parseWarrantyDate(device.warranty_ends);
+      if (!warrantyEnd) continue;
+      const warrantyStart = parseWarrantyDate(device.tested_at) ?? addCalendarMonths(warrantyEnd, -settings.warrantyMonths);
+      update.run(toIsoDate(warrantyStart), toIsoDate(warrantyStart), toIsoDate(warrantyEnd), device.id);
+    }
+    database.prepare("INSERT INTO app_meta (key, value) VALUES ('phase5_sales_backfill_dates_v3', ?)").run(new Date().toISOString());
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 function getDatabase() {
   if (globalDatabase.devicePassportDb) {
     ensureClaimSchema(globalDatabase.devicePassportDb);
     ensureOperationsSchema(globalDatabase.devicePassportDb);
+    backfillExistingSales(globalDatabase.devicePassportDb);
+    correctLegacySaleDates(globalDatabase.devicePassportDb);
     return globalDatabase.devicePassportDb;
   }
 
@@ -309,6 +420,9 @@ function getDatabase() {
     insertInspection.run(device.id, "Demo inspection completed before sale.", device.testedAt);
   }
 
+  backfillExistingSales(database);
+  correctLegacySaleDates(database);
+
   globalDatabase.devicePassportDb = database;
   return database;
 }
@@ -321,7 +435,19 @@ function deviceValues(device: DeviceRecord) {
   ];
 }
 
-function rowToDevice(row: DeviceRow): DeviceRecord {
+function rowToDevice(row: DeviceWithSaleRow): DeviceRecord {
+  const sale: DeviceSale | null = row.sale_handover_token ? {
+    customerName: row.sale_customer_name ?? "",
+    customerEmail: row.sale_customer_email ?? "",
+    customerPhone: row.sale_customer_phone ?? "",
+    invoiceReference: row.sale_invoice_reference ?? "",
+    soldAt: row.sale_sold_at ?? "",
+    warrantyStarts: row.sale_warranty_starts ?? "",
+    warrantyEnds: row.sale_warranty_ends ?? "",
+    handoverToken: row.sale_handover_token,
+    activatedBy: row.sale_activated_by ?? "",
+    createdAt: row.sale_created_at ?? "",
+  } : null;
   return {
     id: row.id,
     name: row.name,
@@ -338,6 +464,8 @@ function rowToDevice(row: DeviceRow): DeviceRecord {
     technician: row.technician,
     warrantyEnds: row.warranty_ends,
     status: row.status,
+    lifecycleStatus: sale ? "Sold" : row.status === "Published" ? "Ready" : "Draft",
+    sale,
   };
 }
 
@@ -478,14 +606,102 @@ export function recordAuditEvent(actor: string, action: string, summary: string)
     .run(randomUUID(), actor, action, summary.slice(0, 500), new Date().toISOString());
 }
 
+const deviceSelectSql = `
+  SELECT d.*,
+    s.customer_name AS sale_customer_name,
+    s.customer_email AS sale_customer_email,
+    s.customer_phone AS sale_customer_phone,
+    s.invoice_reference AS sale_invoice_reference,
+    s.sold_at AS sale_sold_at,
+    s.warranty_starts AS sale_warranty_starts,
+    s.warranty_ends AS sale_warranty_ends,
+    s.handover_token AS sale_handover_token,
+    s.activated_by AS sale_activated_by,
+    s.created_at AS sale_created_at
+  FROM devices d
+  LEFT JOIN device_sales s ON s.device_id = d.id
+`;
+
 export function listDevices(): DeviceRecord[] {
-  const rows = getDatabase().prepare("SELECT * FROM devices ORDER BY created_at DESC, id DESC").all() as unknown as DeviceRow[];
+  const rows = getDatabase().prepare(`${deviceSelectSql} ORDER BY d.created_at DESC, d.id DESC`).all() as unknown as DeviceWithSaleRow[];
   return rows.map(rowToDevice);
 }
 
 export function findDevice(id: string): DeviceRecord | null {
-  const row = getDatabase().prepare("SELECT * FROM devices WHERE lower(id) = lower(?)").get(id) as unknown as DeviceRow | undefined;
+  const row = getDatabase().prepare(`${deviceSelectSql} WHERE lower(d.id) = lower(?)`).get(id) as unknown as DeviceWithSaleRow | undefined;
   return row ? rowToDevice(row) : null;
+}
+
+export function findDeviceByHandoverToken(token: string): DeviceRecord | null {
+  if (!/^[A-Za-z0-9_-]{20,80}$/.test(token)) return null;
+  const row = getDatabase().prepare(`${deviceSelectSql} WHERE s.handover_token = ?`).get(token) as unknown as DeviceWithSaleRow | undefined;
+  return row ? rowToDevice(row) : null;
+}
+
+export function activateDeviceSale(deviceId: string, input: SaleActivationInput, actor: string): DeviceRecord {
+  const customerName = input.customerName?.trim();
+  const customerEmail = input.customerEmail?.trim().toLowerCase() ?? "";
+  const customerPhone = input.customerPhone?.trim() ?? "";
+  const invoiceReference = input.invoiceReference?.trim();
+  const soldAt = input.soldAt?.trim();
+
+  if (!customerName || customerName.length < 2 || customerName.length > 100) throw new Error("Customer name must contain 2 to 100 characters.");
+  if (!customerEmail && !customerPhone) throw new Error("Enter the customer's email address or phone number.");
+  if (customerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) throw new Error("Enter a valid customer email address.");
+  if (customerPhone.length > 30) throw new Error("The customer phone number is too long.");
+  if (!invoiceReference || invoiceReference.length < 2 || invoiceReference.length > 80) throw new Error("Invoice reference must contain 2 to 80 characters.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(soldAt)) throw new Error("Choose a valid sale date.");
+
+  const saleDate = new Date(`${soldAt}T12:00:00.000Z`);
+  if (Number.isNaN(saleDate.getTime()) || toIsoDate(saleDate) !== soldAt) throw new Error("Choose a valid sale date.");
+  const tomorrow = new Date();
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  if (saleDate.getTime() > tomorrow.getTime()) throw new Error("The sale date cannot be in the future.");
+  const oldestAllowed = new Date();
+  oldestAllowed.setUTCFullYear(oldestAllowed.getUTCFullYear() - 5);
+  if (saleDate.getTime() < oldestAllowed.getTime()) throw new Error("The sale date cannot be more than five years ago.");
+
+  const database = getDatabase();
+  const device = database.prepare("SELECT id, status FROM devices WHERE lower(id) = lower(?)").get(deviceId) as { id: string; status: DeviceRow["status"] } | undefined;
+  if (!device) throw new Error("This device passport could not be found.");
+  if (database.prepare("SELECT device_id FROM device_sales WHERE device_id = ?").get(device.id)) throw new Error("This device warranty has already been activated.");
+  if (device.status !== "Published") throw new Error("Complete the device review before activating its sale.");
+  if (database.prepare("SELECT device_id FROM device_sales WHERE lower(invoice_reference) = lower(?)").get(invoiceReference)) throw new Error("This invoice reference has already been used.");
+
+  const settings = readShopSettings(database);
+  const warrantyEnd = addCalendarMonths(saleDate, settings.warrantyMonths);
+  const handoverToken = randomBytes(24).toString("base64url");
+  const createdAt = new Date().toISOString();
+
+  database.exec("BEGIN");
+  try {
+    database.prepare(`
+      INSERT INTO device_sales (
+        device_id, customer_name, customer_email, customer_phone, invoice_reference,
+        sold_at, warranty_starts, warranty_ends, handover_token, activated_by, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      device.id,
+      customerName,
+      customerEmail,
+      customerPhone,
+      invoiceReference,
+      soldAt,
+      soldAt,
+      toIsoDate(warrantyEnd),
+      handoverToken,
+      actor,
+      createdAt,
+    );
+    database.prepare("UPDATE devices SET warranty_ends = ? WHERE id = ?").run(formatDisplayDate(warrantyEnd), device.id);
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+
+  recordAuditEvent(actor, "sale.activated", `Activated ${device.id} for invoice ${invoiceReference}.`);
+  return findDevice(device.id) as DeviceRecord;
 }
 
 export function getPassportEvidence(deviceId: string): PassportEvidence | null {
@@ -550,6 +766,8 @@ export function createWarrantyClaim(deviceId: string, input: WarrantyClaimInput)
   const database = getDatabase();
   const deviceRow = database.prepare("SELECT * FROM devices WHERE lower(id) = lower(?)").get(deviceId) as unknown as DeviceRow | undefined;
   if (!deviceRow) throw new Error("This device passport could not be found.");
+  const saleRow = database.prepare("SELECT warranty_ends FROM device_sales WHERE device_id = ?").get(deviceRow.id) as { warranty_ends: string } | undefined;
+  if (!saleRow) throw new Error("The customer warranty has not been activated for this device.");
 
   const customerName = input.customerName?.trim();
   const customerEmail = input.customerEmail?.trim().toLowerCase() ?? "";
@@ -567,7 +785,7 @@ export function createWarrantyClaim(deviceId: string, input: WarrantyClaimInput)
   const now = new Date().toISOString();
   const claimId = `CLM-${now.slice(2, 10).replaceAll("-", "")}-${randomUUID().slice(0, 4).toUpperCase()}`;
   const trackingToken = randomBytes(18).toString("base64url");
-  const warrantyValid = isWarrantyActive(deviceRow.warranty_ends);
+  const warrantyValid = isWarrantyActive(saleRow.warranty_ends);
 
   database.exec("BEGIN");
   try {
@@ -689,10 +907,6 @@ export function createDeviceFromReport(
   const scoring = calculateInspectionScore(report, checks);
   const firstDisk = report.storage?.[0];
   const testedDate = report.collectedAt ? new Date(report.collectedAt) : new Date();
-  const shopSettings = readShopSettings(database);
-  const warrantyDate = new Date();
-  warrantyDate.setMonth(warrantyDate.getMonth() + shopSettings.warrantyMonths);
-
   const device: DeviceRecord = {
     id: `DVP-LK-${new Date().toISOString().slice(2, 10).replaceAll("-", "")}-${randomUUID().slice(0, 4).toUpperCase()}`,
     name: [report.device?.manufacturer, model].filter(Boolean).join(" "),
@@ -707,8 +921,10 @@ export function createDeviceFromReport(
     processor: report.device?.processor?.trim() || "Not detected",
     testedAt: testedDate.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }),
     technician,
-    warrantyEnds: warrantyDate.toLocaleDateString("en-GB", { dateStyle: "medium" }),
+    warrantyEnds: "",
     status: scoring.needsReview ? "Needs review" : "Published",
+    lifecycleStatus: scoring.needsReview ? "Draft" : "Ready",
+    sale: null,
   };
 
   const preparedPhotos = photos.map(parsePhoto);
@@ -737,6 +953,44 @@ export function createDeviceFromReport(
   recordAuditEvent(technician, "passport.created", `Published ${device.id} for serial ${device.serial}.`);
 
   return device;
+}
+
+function addCalendarMonths(value: Date, months: number) {
+  const year = value.getUTCFullYear();
+  const month = value.getUTCMonth();
+  const day = value.getUTCDate();
+  const target = new Date(Date.UTC(year, month + months, 1, 12));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0, 12)).getUTCDate();
+  target.setUTCDate(Math.min(day, lastDay));
+  return target;
+}
+
+function parseWarrantyDate(value: string) {
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (iso) {
+    const date = new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]), 12));
+    return toIsoDate(date) === value.trim() ? date : null;
+  }
+
+  const display = /^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})(?:,.*)?$/.exec(value.trim());
+  if (display) {
+    const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    const month = months.indexOf(display[2].toLowerCase());
+    if (month >= 0) {
+      const date = new Date(Date.UTC(Number(display[3]), month, Number(display[1]), 12));
+      return date.getUTCDate() === Number(display[1]) ? date : null;
+    }
+  }
+
+  return null;
+}
+
+function toIsoDate(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
+function formatDisplayDate(value: Date) {
+  return value.toLocaleDateString("en-GB", { dateStyle: "medium", timeZone: "UTC" });
 }
 
 function validateLogo(value: string) {

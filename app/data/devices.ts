@@ -1,3 +1,5 @@
+import type { DeviceLifecycleStatus, DeviceSale } from "../../lib/sales";
+
 export type DeviceRecord = {
   id: string;
   name: string;
@@ -14,6 +16,8 @@ export type DeviceRecord = {
   technician: string;
   warrantyEnds: string;
   status: "Published" | "Needs review" | "Draft";
+  lifecycleStatus: DeviceLifecycleStatus;
+  sale: DeviceSale | null;
 };
 
 export const devices: DeviceRecord[] = [
@@ -33,6 +37,8 @@ export const devices: DeviceRecord[] = [
     technician: "Kasun Perera",
     warrantyEnds: "10 Feb 2027",
     status: "Published",
+    lifecycleStatus: "Ready",
+    sale: null,
   },
   {
     id: "DVP-LK-240830",
@@ -50,6 +56,8 @@ export const devices: DeviceRecord[] = [
     technician: "Kasun Perera",
     warrantyEnds: "09 Feb 2027",
     status: "Published",
+    lifecycleStatus: "Ready",
+    sale: null,
   },
   {
     id: "DVP-LK-240829",
@@ -67,6 +75,8 @@ export const devices: DeviceRecord[] = [
     technician: "Nadeesha Silva",
     warrantyEnds: "09 Nov 2026",
     status: "Needs review",
+    lifecycleStatus: "Draft",
+    sale: null,
   },
   {
     id: "DVP-LK-240828",
@@ -84,6 +94,8 @@ export const devices: DeviceRecord[] = [
     technician: "Nadeesha Silva",
     warrantyEnds: "08 Feb 2027",
     status: "Published",
+    lifecycleStatus: "Ready",
+    sale: null,
   },
 ];
 

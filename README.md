@@ -12,6 +12,9 @@ DevicePassport is an independent shop system for refurbished laptop health repor
 - Three-step diagnostic import, technician inspection, and approval workflow
 - Photo evidence stored with each passport
 - Public QR passport pages and printable 40 × 25 mm asset labels
+- Draft → Ready → Sold inventory lifecycle with sale-date warranty activation
+- Buyer records, invoice references, customer search, and warranty-expiry alerts
+- Private QR warranty cards that reopen the buyer's coverage and claim journey
 - Account-free warranty claim submission with evidence photos
 - Private customer tracking links and a technician status timeline
 - Authenticated claims inbox for shop staff
@@ -42,11 +45,12 @@ Copy `.env.example` to `.env.local` and replace every credential before deployin
 3. Upload `examples/sample-device-report.json`.
 4. Record each manual inspection as pass or fail and optionally attach up to four evidence photos.
 5. Review the calculated score, approve the inspection, and publish the passport.
-6. Open the public passport or print its 40 × 25 mm QR label.
+6. Open the public passport or print its 40 × 25 mm QR label. The device enters **Ready** stock without starting its warranty.
+7. Open **Sales**, select the device, record the buyer and invoice, and activate the warranty from the real sale date.
 
 The imported report and passport record are saved in `.data/device-passport.db`.
 
-With the development server running, verify the complete login/import/passport/photo/label journey with:
+With the development server running, verify the complete login/import/passport/photo/label/sale/warranty/claim journey with:
 
 ```bash
 npm run smoke
@@ -56,11 +60,20 @@ The smoke test removes its temporary device record when it finishes.
 
 ## Shop administration
 
-- **Owner** can manage branding, warranty defaults, staff accounts, claims, and device tests.
-- **Technician** can create device passports and manage warranty claims.
-- **Support** can manage claims but cannot create passports or access staff administration.
+- **Owner** can manage branding, warranty defaults, staff accounts, sales, claims, and device tests.
+- **Technician** can create device passports, activate sales, and manage warranty claims.
+- **Support** can search customer handovers and manage claims, but cannot activate sales, create passports, or access staff administration.
 
-Use **Settings** to update the shop identity and your own password. Use **Staff** as an Owner to create accounts, change roles, reset passwords, disable access, and review the audit history. New passports use the configured warranty duration automatically.
+Use **Settings** to update the shop identity and your own password. Use **Staff** as an Owner to create accounts, change roles, reset passwords, disable access, and review the audit history. The configured warranty duration is applied when a sale is activated.
+
+## Customer handover flow
+
+1. Complete the diagnostic inspection so the passport reaches **Ready**.
+2. Open **Sales** and search by passport ID, serial, model, buyer phone, email, or invoice.
+3. Record the buyer, one contact method, invoice reference, and sale date.
+4. Activate the sale. The device becomes **Sold**, and its warranty dates are calculated from the sale date.
+5. Open, print, or copy the private QR warranty card for the buyer.
+6. Use the Sales dashboard to find customer records and follow up on warranties expiring within 30 days.
 
 ## Warranty claim flow
 
