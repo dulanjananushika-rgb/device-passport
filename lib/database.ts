@@ -332,6 +332,58 @@ function ensureFinanceSchema(database: DatabaseSync) {
   `);
 }
 
+function ensureProcurementSchema(database: DatabaseSync) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS suppliers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+      contact_name TEXT NOT NULL DEFAULT '',
+      email TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL DEFAULT '',
+      active INTEGER NOT NULL DEFAULT 1,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS stock_intakes (
+      id TEXT PRIMARY KEY,
+      supplier_id TEXT NOT NULL,
+      device_id TEXT UNIQUE,
+      device_name TEXT NOT NULL,
+      model TEXT NOT NULL,
+      serial TEXT NOT NULL COLLATE NOCASE UNIQUE,
+      supplier_invoice TEXT NOT NULL,
+      purchased_at TEXT NOT NULL,
+      purchase_cost_cents INTEGER NOT NULL DEFAULT 0 CHECK (purchase_cost_cents >= 0),
+      status TEXT NOT NULL DEFAULT 'Awaiting test',
+      notes TEXT NOT NULL DEFAULT '',
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE CASCADE,
+      FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE SET NULL
+    );
+    CREATE TABLE IF NOT EXISTS refurbishment_tasks (
+      id TEXT PRIMARY KEY,
+      intake_id TEXT NOT NULL,
+      category TEXT NOT NULL,
+      description TEXT NOT NULL,
+      cost_cents INTEGER NOT NULL DEFAULT 0 CHECK (cost_cents >= 0),
+      completed INTEGER NOT NULL DEFAULT 0,
+      created_by TEXT NOT NULL,
+      completed_by TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      completed_at TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (intake_id) REFERENCES stock_intakes(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_stock_intakes_supplier ON stock_intakes(supplier_id, purchased_at);
+    CREATE INDEX IF NOT EXISTS idx_stock_intakes_status ON stock_intakes(status, purchased_at);
+    CREATE INDEX IF NOT EXISTS idx_stock_intakes_device ON stock_intakes(device_id);
+    CREATE INDEX IF NOT EXISTS idx_refurbishment_tasks_intake ON refurbishment_tasks(intake_id, completed);
+  `);
+}
+
 function backfillExistingSales(database: DatabaseSync) {
   const migration = database.prepare("SELECT value FROM app_meta WHERE key = 'phase5_sales_backfill'").get();
   if (migration) return;
@@ -405,6 +457,7 @@ export function getDatabase() {
     ensureClaimSchema(globalDatabase.devicePassportDb);
     ensureOperationsSchema(globalDatabase.devicePassportDb);
     ensureFinanceSchema(globalDatabase.devicePassportDb);
+    ensureProcurementSchema(globalDatabase.devicePassportDb);
     backfillExistingSales(globalDatabase.devicePassportDb);
     correctLegacySaleDates(globalDatabase.devicePassportDb);
     return globalDatabase.devicePassportDb;
@@ -465,6 +518,7 @@ export function getDatabase() {
   ensureClaimSchema(database);
   ensureOperationsSchema(database);
   ensureFinanceSchema(database);
+  ensureProcurementSchema(database);
 
   const insert = database.prepare(`
     INSERT OR IGNORE INTO devices (
@@ -1094,6 +1148,21 @@ export function isWarrantyActive(value: string) {
   return Number.isFinite(timestamp) && timestamp + 24 * 60 * 60 * 1000 > Date.now();
 }
 
+function linkMatchingStockIntake(database: DatabaseSync, device: DeviceRecord, actor: string) {
+  const intake = database.prepare("SELECT id, purchase_cost_cents FROM stock_intakes WHERE serial = ? COLLATE NOCASE AND device_id IS NULL").get(device.serial) as { id: string; purchase_cost_cents: number } | undefined;
+  if (!intake) return "";
+  const now = new Date().toISOString();
+  database.prepare("UPDATE stock_intakes SET device_id = ?, device_name = ?, model = ?, status = ?, updated_at = ? WHERE id = ?")
+    .run(device.id, device.name, device.model, device.status === "Published" ? "Ready" : "In refurbishment", now, intake.id);
+  database.prepare(`
+    INSERT INTO device_finance (device_id, purchase_cost_cents, refurbishment_cost_cents, updated_by, updated_at)
+    VALUES (?, ?, 0, ?, ?)
+    ON CONFLICT(device_id) DO UPDATE SET purchase_cost_cents = excluded.purchase_cost_cents,
+      updated_by = excluded.updated_by, updated_at = excluded.updated_at
+  `).run(device.id, intake.purchase_cost_cents, actor, now);
+  return intake.id;
+}
+
 export function createDeviceFromReport(
   report: DiagnosticReport,
   checks: InspectionChecks,
@@ -1135,6 +1204,7 @@ export function createDeviceFromReport(
   };
 
   const preparedPhotos = photos.map(parsePhoto);
+  let linkedIntakeId = "";
   database.exec("BEGIN");
   try {
     database.prepare(`
@@ -1151,13 +1221,14 @@ export function createDeviceFromReport(
     `).run(device.id, checks.display, checks.keyboard, checks.camera, checks.audio, checks.ports, checks.wireless, notes.trim(), new Date().toISOString());
     const insertPhoto = database.prepare("INSERT INTO device_photos (id, device_id, name, mime_type, data) VALUES (?, ?, ?, ?, ?)");
     for (const photo of preparedPhotos) insertPhoto.run(randomUUID(), device.id, photo.name, photo.mimeType, photo.data);
+    linkedIntakeId = linkMatchingStockIntake(database, device, technician);
     database.exec("COMMIT");
   } catch (error) {
     database.exec("ROLLBACK");
     throw error;
   }
 
-  recordAuditEvent(technician, "passport.created", `Published ${device.id} for serial ${device.serial}.`);
+  recordAuditEvent(technician, "passport.created", `Published ${device.id} for serial ${device.serial}${linkedIntakeId ? ` and linked intake ${linkedIntakeId}` : ""}.`);
 
   return device;
 }

@@ -7,6 +7,7 @@ import { listNotifications } from "../lib/notification-store";
 import { getSystemReadiness } from "../lib/readiness";
 import { Dashboard } from "./ui/Dashboard";
 import { getFinanceAnalytics } from "../lib/analytics";
+import { getProcurementDashboard } from "../lib/procurement";
 
 export const metadata: Metadata = {
   title: "DevicePassport | Verified device health",
@@ -33,6 +34,7 @@ export default async function Home() {
       initialSettings={getShopSettings()}
       initialSystem={ownerData ? getSystemReadiness() : null}
       initialAnalytics={ownerData ? getFinanceAnalytics() : null}
+      initialProcurement={session.role !== "Support" ? getProcurementDashboard(ownerData) : null}
       session={session}
     />
   );

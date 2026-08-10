@@ -23,6 +23,8 @@ DevicePassport is an independent shop system for refurbished laptop health repor
 - Click-to-send WhatsApp/email templates with composer-open and completion history
 - Owner-only profit and reliability analytics with exact purchase, refurbishment, sale, and warranty costs
 - Six-month revenue/profit charts, model failure rates, SLA/turnaround metrics, technician workload, and safe CSV export
+- Supplier book, serial-controlled stock intake, purchase invoices, stock aging, and printable internal intake labels
+- Refurbishment task checklists whose parts/repair costs flow automatically into device profit and supplier performance
 - Configurable shop branding, contact details, warranty defaults, and logo
 - Staff account management, password changes, and audit history
 - Automatic daily SQLite snapshots with 14-day retention
@@ -71,9 +73,9 @@ The smoke journey also verifies health checks, security headers, backup creation
 
 ## Shop administration
 
-- **Owner** can manage branding, warranty defaults, staff accounts, sales, claims, device tests, the private cost book, profit analytics, and CSV exports.
-- **Technician** can create device passports, activate sales, manage warranty claims, and record warranty repair costs without access to the profit dashboard.
-- **Support** can search customer handovers and manage claims, but cannot activate sales, create passports, or access staff administration.
+- **Owner** can manage branding, warranty defaults, staff accounts, suppliers, stock intake, purchase costs, sales, claims, device tests, the private cost book, profit analytics, and CSV exports.
+- **Technician** can access the intake/refurbishment queue, complete task checklists, create device passports, activate sales, manage warranty claims, and record repair costs without access to supplier purchase/profit analytics.
+- **Support** can search customer handovers and manage claims, but cannot access procurement, activate sales, create passports, or access staff administration.
 
 Use **Settings** to update the shop identity and your own password. Use **Staff** as an Owner to create accounts, change roles, reset passwords, disable access, and review the audit history. The configured warranty duration is applied when a sale is activated.
 
@@ -122,6 +124,17 @@ Amounts are stored as integer minor units rather than floating-point values. Fin
 5. After the staff member confirms that the message was sent, mark the alert **Done**. Alerts can also be dismissed or reopened.
 
 The standalone build does not send messages in the background. Connecting an email provider or WhatsApp Business API is a later opt-in deployment step.
+
+## Supplier and inventory intake
+
+1. Open **Intake** as an Owner, add the supplier, then record each purchased device with its serial, supplier invoice, purchase date, and exact cost.
+2. Print the internal 60 × 30 mm QR intake label and attach it before diagnostics. Duplicate serials are rejected across both intake and published passports.
+3. Owners or Technicians add inspection, part, repair, cleaning, or other refurbishment tasks and complete the checklist on the shop bench.
+4. Import the Windows diagnostic report. A matching serial links the intake and passport automatically; purchase and task costs immediately flow into Analytics.
+5. Use the 30/60/90-day aging indicators to identify stock that is tying up cash, then follow the device through **Awaiting test → In refurbishment → Ready → Sold**.
+6. Review the supplier scorecard for volume, passport-link rate, warranty failures, remaining stock value, and realized gross profit.
+
+Purchase price and supplier profit fields are Owner-only. Technicians receive the operational queue and refurbishment task costs; Support accounts cannot access procurement APIs or pages.
 
 ## Backups and recovery
 

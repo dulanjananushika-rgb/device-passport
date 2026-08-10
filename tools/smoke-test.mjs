@@ -8,10 +8,13 @@ const staffEmail = `smoke-${runId}@example.com`;
 const temporaryPassword = "SmokePass!234";
 const changedPassword = "SmokePass!567";
 const invoiceReference = `SMOKE-INV-${runId}`;
+const supplierName = `Smoke Supplier ${runId}`;
 const restoreTestIp = `198.51.100.${(runId % 200) + 1}`;
 const tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 let createdDeviceId = "";
 let createdClaimId = "";
+let createdSupplierId = "";
+let createdIntakeId = "";
 const createdBackupNames = [];
 
 async function expectOk(response, step) {
@@ -62,6 +65,8 @@ try {
   }), "Staff password change");
   const { cookie: changedStaffCookie } = await loginAs(staffEmail, changedPassword);
 
+  const technicianProcurement = await expectOk(await fetch(`${baseUrl}/api/procurement`, { headers: { cookie: changedStaffCookie } }), "Technician procurement access");
+
   const roleUpdate = await expectOk(await fetch(`${baseUrl}/api/staff/${createdStaff.id}`, {
     method: "PATCH",
     headers: { "content-type": "application/json", cookie },
@@ -79,6 +84,47 @@ try {
   if (forbiddenSystem.status !== 403) throw new Error(`Support system permission expected 403, received ${forbiddenSystem.status}.`);
   const forbiddenAnalytics = await fetch(`${baseUrl}/api/analytics`, { headers: { cookie: changedStaffCookie } });
   if (forbiddenAnalytics.status !== 403) throw new Error(`Support analytics permission expected 403, received ${forbiddenAnalytics.status}.`);
+  const forbiddenProcurement = await fetch(`${baseUrl}/api/procurement`, { headers: { cookie: changedStaffCookie } });
+  if (forbiddenProcurement.status !== 403) throw new Error(`Support procurement permission expected 403, received ${forbiddenProcurement.status}.`);
+
+  const supplierCreation = await expectOk(await fetch(`${baseUrl}/api/procurement/suppliers`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ name: supplierName, contactName: "Smoke Vendor", email: "vendor@example.com", phone: "+94 77 555 0000" }),
+  }), "Supplier creation");
+  const { supplier: createdSupplier } = await supplierCreation.json();
+  createdSupplierId = createdSupplier.id;
+  const forbiddenSupplierCreation = await fetch(`${baseUrl}/api/procurement/suppliers`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: changedStaffCookie },
+    body: JSON.stringify({ name: `${supplierName} forbidden`, contactName: "", email: "", phone: "" }),
+  });
+  if (forbiddenSupplierCreation.status !== 403) throw new Error(`Support supplier permission expected 403, received ${forbiddenSupplierCreation.status}.`);
+
+  const intakeCreation = await expectOk(await fetch(`${baseUrl}/api/procurement`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ supplierId: createdSupplier.id, deviceName: "Smoke Test Laptop", model: "Smoke Model", serial, supplierInvoice: `SUP-${runId}`, purchasedAt: new Date().toISOString().slice(0, 10), purchaseCostLkr: "100000", notes: "Smoke intake received with charger." }),
+  }), "Stock intake creation");
+  const { intake: createdIntake } = await intakeCreation.json();
+  createdIntakeId = createdIntake.id;
+  if (createdIntake.status !== "Awaiting test" || createdIntake.purchaseCostCents !== 10_000_000 || createdIntake.deviceId) throw new Error("New stock did not enter the Awaiting test queue with its exact purchase cost.");
+  const duplicateIntake = await fetch(`${baseUrl}/api/procurement`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ supplierId: createdSupplier.id, deviceName: "Duplicate", model: "Duplicate", serial, supplierInvoice: `DUP-${runId}`, purchasedAt: new Date().toISOString().slice(0, 10), purchaseCostLkr: "1", notes: "" }),
+  });
+  if (duplicateIntake.status !== 400) throw new Error(`Duplicate intake serial expected 400, received ${duplicateIntake.status}.`);
+  const initialProcurement = await expectOk(await fetch(`${baseUrl}/api/procurement`, { headers: { cookie } }), "Initial procurement dashboard");
+  const initialProcurementPayload = await initialProcurement.json();
+  if (!initialProcurementPayload.procurement.intakes.some((item) => item.id === createdIntake.id && item.status === "Awaiting test") || initialProcurementPayload.procurement.metrics.inventoryValueCents < 10_000_000) throw new Error("The initial intake queue or stock valuation was incorrect.");
+  const intakeLabel = await expectOk(await fetch(`${baseUrl}/intake-label/${createdIntake.id}`, { headers: { cookie } }), "Private intake label");
+  const intakeLabelHtml = await intakeLabel.text();
+  if (!intakeLabelHtml.includes(createdIntake.id) || !intakeLabelHtml.includes(serial)) throw new Error("The printable intake label did not contain the intake identity and serial.");
+  const unauthenticatedIntakeLabel = await fetch(`${baseUrl}/intake-label/${createdIntake.id}`, { redirect: "manual" });
+  if (![303, 307, 308].includes(unauthenticatedIntakeLabel.status)) throw new Error(`Unauthenticated intake label expected a redirect, received ${unauthenticatedIntakeLabel.status}.`);
+  const unauthenticatedProcurement = await fetch(`${baseUrl}/api/procurement`);
+  if (unauthenticatedProcurement.status !== 401) throw new Error(`Unauthenticated procurement expected 401, received ${unauthenticatedProcurement.status}.`);
 
   const report = JSON.parse(await readFile(new URL("../examples/sample-device-report.json", import.meta.url), "utf8"));
   report.device.serialNumber = serial;
@@ -98,6 +144,27 @@ try {
   const { device } = await imported.json();
   createdDeviceId = device.id;
   if (device.lifecycleStatus !== "Ready" || device.sale || device.warrantyEnds) throw new Error("A new verified passport did not enter the Ready lifecycle state.");
+
+  const taskCreation = await expectOk(await fetch(`${baseUrl}/api/procurement/intakes/${createdIntake.id}/tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ category: "Part", description: "Replacement battery and installation", costLkr: "15000" }),
+  }), "Refurbishment task creation");
+  const { task: createdTask } = await taskCreation.json();
+  if (createdTask.costCents !== 1_500_000 || createdTask.completed) throw new Error("The refurbishment task or cost was not recorded correctly.");
+  const taskCompletion = await expectOk(await fetch(`${baseUrl}/api/procurement/tasks/${createdTask.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ completed: true }),
+  }), "Refurbishment task completion");
+  const completedTaskIntake = (await taskCompletion.json()).intake;
+  if (completedTaskIntake.deviceId !== device.id || completedTaskIntake.status !== "Ready" || completedTaskIntake.refurbishmentCostCents !== 1_500_000 || !completedTaskIntake.tasks.some((item) => item.id === createdTask.id && item.completed)) throw new Error("Diagnostic auto-link or refurbishment task completion did not reach Ready stock.");
+  const forbiddenTaskUpdate = await fetch(`${baseUrl}/api/procurement/tasks/${createdTask.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie: changedStaffCookie },
+    body: JSON.stringify({ completed: false }),
+  });
+  if (forbiddenTaskUpdate.status !== 403) throw new Error(`Support refurbishment permission expected 403, received ${forbiddenTaskUpdate.status}.`);
 
   const financeUpdate = await expectOk(await fetch(`${baseUrl}/api/finance/devices/${device.id}`, {
     method: "PATCH",
@@ -271,6 +338,12 @@ try {
   if (!analyticsExport.headers.get("content-type")?.includes("text/csv") || !analyticsCsv.includes(device.id) || !analyticsCsv.includes("41500.00")) throw new Error("The finance CSV did not contain the expected device profit row.");
   const unauthenticatedAnalytics = await fetch(`${baseUrl}/api/analytics`);
   if (unauthenticatedAnalytics.status !== 401) throw new Error(`Unauthenticated analytics expected 401, received ${unauthenticatedAnalytics.status}.`);
+  const finalProcurement = await expectOk(await fetch(`${baseUrl}/api/procurement`, { headers: { cookie } }), "Final supplier performance");
+  const finalProcurementPayload = await finalProcurement.json();
+  const finalIntake = finalProcurementPayload.procurement.intakes.find((item) => item.id === createdIntake.id);
+  const supplierPerformance = finalProcurementPayload.procurement.supplierPerformance.find((item) => item.supplierId === createdSupplier.id);
+  if (!finalIntake || finalIntake.status !== "Sold" || finalIntake.deviceId !== device.id || finalIntake.grossProfitCents !== 4_150_000) throw new Error("The procurement lifecycle did not reach Sold with the expected profit.");
+  if (!supplierPerformance || supplierPerformance.sold !== 1 || supplierPerformance.claims !== 1 || supplierPerformance.affectedDevices !== 1 || supplierPerformance.grossProfitCents !== 4_150_000) throw new Error("Supplier reliability and profit performance were not calculated correctly.");
 
   const backupCreation = await expectOk(await fetch(`${baseUrl}/api/backups`, { method: "POST", headers: { cookie } }), "Manual database backup");
   const { backup } = await backupCreation.json();
@@ -354,23 +427,38 @@ try {
     analytics: analyticsResponse.status,
     analyticsExport: analyticsExport.status,
     analyticsProtected: unauthenticatedAnalytics.status,
+    technicianProcurement: technicianProcurement.status,
+    supportProcurementDenied: forbiddenProcurement.status,
+    supplierCreate: supplierCreation.status,
+    supportSupplierDenied: forbiddenSupplierCreation.status,
+    intakeCreate: intakeCreation.status,
+    duplicateIntakeDenied: duplicateIntake.status,
+    procurement: initialProcurement.status,
+    intakeLabel: intakeLabel.status,
+    intakeLabelProtected: unauthenticatedIntakeLabel.status,
+    procurementProtected: unauthenticatedProcurement.status,
+    refurbishmentTask: taskCreation.status,
+    taskCompletion: taskCompletion.status,
+    supportTaskDenied: forbiddenTaskUpdate.status,
+    supplierPerformance: finalProcurement.status,
     deviceId: device.id,
     claimId: claim.id,
   }, null, 2));
 } finally {
   const database = new DatabaseSync(new URL("../.data/device-passport.db", import.meta.url));
   database.exec("PRAGMA foreign_keys = ON");
+  const supplierResult = database.prepare("DELETE FROM suppliers WHERE id = ? OR name = ?").run(createdSupplierId, supplierName);
   const deviceResult = database.prepare("DELETE FROM devices WHERE serial = ?").run(serial);
   const staffResult = database.prepare("DELETE FROM staff_users WHERE email = ?").run(staffEmail);
   const notificationResult = database.prepare("DELETE FROM notification_queue WHERE entity_id = ? OR entity_id = ?").run(createdDeviceId, createdClaimId);
   const auditResult = database.prepare(`
     DELETE FROM audit_events
-    WHERE actor = ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ?
-  `).run(staffEmail, `%${staffEmail}%`, `%${serial}%`, `%${createdDeviceId}%`, `%${createdClaimId}%`);
+    WHERE actor = ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ?
+  `).run(staffEmail, `%${staffEmail}%`, `%${serial}%`, `%${createdDeviceId}%`, `%${createdClaimId}%`, `%${createdSupplierId}%`, `%${createdIntakeId}%`, `%${supplierName}%`);
   const backupAudit = database.prepare("DELETE FROM audit_events WHERE summary LIKE ?");
   let backupAuditChanges = 0;
   for (const backupName of createdBackupNames) backupAuditChanges += Number(backupAudit.run(`%${backupName}%`).changes);
   database.close();
   for (const backupName of createdBackupNames) await rm(new URL(`../.data/backups/${backupName}`, import.meta.url), { force: true });
-  console.log(`Cleaned smoke-test data: ${deviceResult.changes} device, ${staffResult.changes} staff, ${notificationResult.changes} notifications, ${Number(auditResult.changes) + backupAuditChanges} audit events, ${createdBackupNames.length} backups`);
+  console.log(`Cleaned smoke-test data: ${supplierResult.changes} supplier, ${deviceResult.changes} device, ${staffResult.changes} staff, ${notificationResult.changes} notifications, ${Number(auditResult.changes) + backupAuditChanges} audit events, ${createdBackupNames.length} backups`);
 }

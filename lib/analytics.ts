@@ -50,14 +50,15 @@ export function getFinanceAnalytics(): FinanceAnalytics {
   const rows = database.prepare(`
     SELECT d.id AS device_id, d.name AS device_name, d.model, d.serial, d.score, d.status,
       s.sold_at, COALESCE(s.sale_price_cents, 0) AS sale_price_cents,
-      COALESCE(f.purchase_cost_cents, 0) AS purchase_cost_cents,
-      COALESCE(f.refurbishment_cost_cents, 0) AS refurbishment_cost_cents,
+      COALESCE(NULLIF(i.purchase_cost_cents, 0), f.purchase_cost_cents, 0) AS purchase_cost_cents,
+      COALESCE(f.refurbishment_cost_cents, 0) + COALESCE((SELECT SUM(t.cost_cents) FROM refurbishment_tasks t WHERE t.intake_id = i.id), 0) AS refurbishment_cost_cents,
       COALESCE((SELECT SUM(c.service_cost_cents) FROM warranty_claims c WHERE c.device_id = d.id), 0) AS warranty_cost_cents,
       (SELECT COUNT(*) FROM warranty_claims c WHERE c.device_id = d.id) AS claim_count,
       f.updated_at
     FROM devices d
     LEFT JOIN device_sales s ON s.device_id = d.id
     LEFT JOIN device_finance f ON f.device_id = d.id
+    LEFT JOIN stock_intakes i ON i.device_id = d.id
     ORDER BY COALESCE(s.sold_at, d.created_at) DESC, d.id DESC
   `).all() as unknown as FinanceRow[];
 
@@ -84,8 +85,12 @@ export function getFinanceAnalytics(): FinanceAnalytics {
   const realizedCostCents = soldDevices.reduce((sum, device) => sum + device.purchaseCostCents + device.refurbishmentCostCents + device.warrantyCostCents, 0);
   const warrantyCostCents = devices.reduce((sum, device) => sum + device.warrantyCostCents, 0);
   const grossProfitCents = revenueCents - realizedCostCents;
+  const unlinkedStock = database.prepare(`
+    SELECT COALESCE(SUM(i.purchase_cost_cents + COALESCE((SELECT SUM(t.cost_cents) FROM refurbishment_tasks t WHERE t.intake_id = i.id), 0)), 0) AS total
+    FROM stock_intakes i WHERE i.device_id IS NULL AND i.status != 'Archived'
+  `).get() as { total: number };
   const inventoryInvestmentCents = devices.filter((device) => device.lifecycleStatus !== "Sold")
-    .reduce((sum, device) => sum + device.purchaseCostCents + device.refurbishmentCostCents, 0);
+    .reduce((sum, device) => sum + device.purchaseCostCents + device.refurbishmentCostCents, 0) + unlinkedStock.total;
 
   const claimRows = database.prepare(`
     SELECT c.id, c.assigned_to_id, c.status, c.due_date, c.created_at,
@@ -182,13 +187,27 @@ export function updateDeviceFinance(deviceId: string, purchaseCostCents: number,
   const database = getDatabase();
   const device = database.prepare("SELECT id, name FROM devices WHERE lower(id) = lower(?)").get(deviceId) as { id: string; name: string } | undefined;
   if (!device) throw new Error("This device passport could not be found.");
+  const intake = database.prepare(`
+    SELECT i.id, COALESCE((SELECT SUM(t.cost_cents) FROM refurbishment_tasks t WHERE t.intake_id = i.id), 0) AS task_cost_cents
+    FROM stock_intakes i WHERE i.device_id = ?
+  `).get(device.id) as { id: string; task_cost_cents: number } | undefined;
+  if (intake && refurbishmentCostCents < intake.task_cost_cents) throw new Error("Refurbishment total cannot be lower than the tracked task costs.");
+  const baseRefurbishmentCostCents = refurbishmentCostCents - (intake?.task_cost_cents ?? 0);
   const now = new Date().toISOString();
-  database.prepare(`
-    INSERT INTO device_finance (device_id, purchase_cost_cents, refurbishment_cost_cents, updated_by, updated_at)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(device_id) DO UPDATE SET purchase_cost_cents = excluded.purchase_cost_cents,
-      refurbishment_cost_cents = excluded.refurbishment_cost_cents, updated_by = excluded.updated_by, updated_at = excluded.updated_at
-  `).run(device.id, purchaseCostCents, refurbishmentCostCents, actor, now);
+  database.exec("BEGIN");
+  try {
+    database.prepare(`
+      INSERT INTO device_finance (device_id, purchase_cost_cents, refurbishment_cost_cents, updated_by, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(device_id) DO UPDATE SET purchase_cost_cents = excluded.purchase_cost_cents,
+        refurbishment_cost_cents = excluded.refurbishment_cost_cents, updated_by = excluded.updated_by, updated_at = excluded.updated_at
+    `).run(device.id, purchaseCostCents, baseRefurbishmentCostCents, actor, now);
+    if (intake) database.prepare("UPDATE stock_intakes SET purchase_cost_cents = ?, updated_at = ? WHERE id = ?").run(purchaseCostCents, now, intake.id);
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
   recordAuditEvent(actor, "finance.device", `Updated purchase and refurbishment costs for ${device.id}.`);
   return getFinanceAnalytics().devices.find((item) => item.deviceId === device.id) as DeviceFinanceItem;
 }

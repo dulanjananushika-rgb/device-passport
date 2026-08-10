@@ -50,6 +50,14 @@ export function canViewFinance(role: StaffRole) {
   return role === "Owner";
 }
 
+export function canAccessProcurement(role: StaffRole) {
+  return role === "Owner" || role === "Technician";
+}
+
+export function canManageProcurement(role: StaffRole) {
+  return role === "Owner";
+}
+
 export function canManageStaff(role: StaffRole) {
   return role === "Owner";
 }

@@ -23,12 +23,15 @@ import { AnalyticsPanel } from "./AnalyticsPanel";
 import type { SystemReadiness } from "../../lib/readiness";
 import type { NotificationItem } from "../../lib/notifications";
 import type { FinanceAnalytics } from "../../lib/finance";
+import type { ProcurementDashboard } from "../../lib/procurement-types";
+import { ProcurementPanel } from "./ProcurementPanel";
 
-type View = "overview" | "devices" | "sales" | "warranties" | "notifications" | "reports" | "analytics" | "staff" | "settings";
+type View = "overview" | "procurement" | "devices" | "sales" | "warranties" | "notifications" | "reports" | "analytics" | "staff" | "settings";
 type WizardStage = 1 | 2 | 3;
 
 const viewTitles: Record<View, { eyebrow: string; title: string }> = {
   overview: { eyebrow: "Operations", title: "Shop overview" },
+  procurement: { eyebrow: "Stock operations", title: "Supplier & inventory intake" },
   devices: { eyebrow: "Inventory", title: "Device passports" },
   sales: { eyebrow: "Customer handover", title: "Sales activation" },
   warranties: { eyebrow: "After-sales", title: "Warranty claims" },
@@ -49,10 +52,11 @@ type DashboardProps = {
   initialSettings: ShopSettings;
   initialSystem: SystemReadiness | null;
   initialAnalytics: FinanceAnalytics | null;
+  initialProcurement: ProcurementDashboard | null;
   session: StaffSession;
 };
 
-export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees, initialNotifications, initialStaff, initialAudit, initialSettings, initialSystem, initialAnalytics, session }: DashboardProps) {
+export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees, initialNotifications, initialStaff, initialAudit, initialSettings, initialSystem, initialAnalytics, initialProcurement, session }: DashboardProps) {
   const [records, setRecords] = useState(initialDevices);
   const [claims, setClaims] = useState(initialClaims);
   const [notifications, setNotifications] = useState(initialNotifications);
@@ -60,6 +64,7 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
   const [audit, setAudit] = useState(initialAudit);
   const [settings, setSettings] = useState(initialSettings);
   const [analytics, setAnalytics] = useState(initialAnalytics);
+  const [procurement, setProcurement] = useState(initialProcurement);
   const [view, setView] = useState<View>("overview");
   const [query, setQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -165,6 +170,7 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
     setRecords((current) => [result.device as DeviceRecord, ...current]);
     setCreatedDevice(result.device as DeviceRecord);
     setSaving(false);
+    if (procurement) await refreshProcurement();
   }
 
   async function signOut() {
@@ -216,6 +222,19 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
     setAnalytics(result.analytics as FinanceAnalytics);
   }
 
+  async function refreshProcurement() {
+    const response = await fetch("/api/procurement", { cache: "no-store" });
+    if (!response.ok) return;
+    const result = await response.json();
+    setProcurement(result.procurement as ProcurementDashboard);
+  }
+
+  async function openProcurement() {
+    if (!procurement) return;
+    setView("procurement");
+    await refreshProcurement();
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar" aria-label="Main navigation">
@@ -226,6 +245,7 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
         <div className="nav-label">Workspace</div>
         <div className="nav-stack">
           <NavButton icon="H" label="Overview" active={view === "overview"} onClick={() => setView("overview")} />
+          {procurement && <NavButton icon="I" label="Intake" active={view === "procurement"} onClick={openProcurement} />}
           <NavButton icon="D" label="Devices" active={view === "devices"} onClick={() => setView("devices")} />
           <NavButton icon="$" label="Sales" active={view === "sales"} onClick={() => setView("sales")} />
           <NavButton icon="C" label="Claims" active={view === "warranties"} onClick={() => setView("warranties")} />
@@ -255,6 +275,7 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
         {view === "overview" && (
           <Overview records={records} readyCount={readyCount} soldCount={soldCount} expiringCount={expiringCount} reviewCount={reviewCount} openClaimCount={openClaimCount} canCreate={canTestDevices} onNewTest={() => setModalOpen(true)} onViewDevices={() => setView("devices")} onViewSales={() => setView("sales")} />
         )}
+        {view === "procurement" && procurement && <ProcurementPanel procurement={procurement} canManage={isOwner} onProcurementChange={setProcurement} onAuditChange={refreshAudit} onStartTest={() => setModalOpen(true)} />}
         {view === "devices" && <DeviceList devices={filteredDevices} query={query} onQuery={setQuery} onNewTest={() => setModalOpen(true)} canCreate={canTestDevices} />}
         {view === "sales" && <SalesPanel devices={records} canActivate={canActivateDeviceSales} warrantyMonths={settings.warrantyMonths} onDeviceChange={updateDevice} onAuditChange={refreshAudit} />}
         {view === "warranties" && <Warranties records={records} claims={claims} assignees={initialClaimAssignees} currentStaffId={session.id} canRecordCosts={session.role === "Owner" || session.role === "Technician"} onClaimUpdate={(updated) => setClaims((current) => current.map((claim) => claim.id === updated.id ? updated : claim))} />}
