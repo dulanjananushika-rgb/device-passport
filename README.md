@@ -18,6 +18,7 @@ DevicePassport is an independent shop system for refurbished laptop health repor
 - Account-free warranty claim submission with evidence photos
 - Private customer tracking links and a technician status timeline
 - Authenticated claims inbox for shop staff
+- Warranty service desk with assignment, priority, due-date/SLA filters, private repair notes, and printable job sheets
 - Configurable shop branding, contact details, warranty defaults, and logo
 - Staff account management, password changes, and audit history
 - Automatic daily SQLite snapshots with 14-day retention
@@ -88,6 +89,14 @@ Use **Settings** to update the shop identity and your own password. Use **Staff*
 3. Save the private tracking link shown after submission.
 4. Open **Claims** in the shop dashboard to review the request and publish status updates.
 5. The customer sees each update on the private tracker without creating an account.
+
+## Warranty service desk
+
+1. Open **Claims** and triage the queue using Open, Mine, Overdue, Urgent, or All.
+2. Assign the service job to an active staff member, choose its priority, and set a due date.
+3. Record diagnosis, parts, tests, and handover details as private internal notes. These notes are never included in the customer tracker.
+4. Print the authenticated A4 job sheet for the repair bench and final customer signature.
+5. Publish only the chosen status and customer-facing note to the private tracker.
 
 ## Backups and recovery
 

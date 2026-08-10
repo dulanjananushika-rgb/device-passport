@@ -4,7 +4,7 @@ import { ChangeEvent, useMemo, useState } from "react";
 import Image from "next/image";
 import type { DeviceRecord } from "../data/devices";
 import type { StaffSession } from "../../lib/auth";
-import { claimStatuses, type ClaimStatus, type WarrantyClaimSummary } from "../../lib/claims";
+import { claimPriorities, claimStatuses, type ClaimAssignee, type ClaimPriority, type ClaimStatus, type WarrantyClaimSummary } from "../../lib/claims";
 import { canActivateSales, staffRoles, type AuditEvent, type ShopSettings, type StaffAccount, type StaffRole } from "../../lib/operations";
 import {
   calculateInspectionScore,
@@ -36,6 +36,7 @@ const viewTitles: Record<View, { eyebrow: string; title: string }> = {
 type DashboardProps = {
   initialDevices: DeviceRecord[];
   initialClaims: WarrantyClaimSummary[];
+  initialClaimAssignees: ClaimAssignee[];
   initialStaff: StaffAccount[];
   initialAudit: AuditEvent[];
   initialSettings: ShopSettings;
@@ -43,7 +44,7 @@ type DashboardProps = {
   session: StaffSession;
 };
 
-export function Dashboard({ initialDevices, initialClaims, initialStaff, initialAudit, initialSettings, initialSystem, session }: DashboardProps) {
+export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees, initialStaff, initialAudit, initialSettings, initialSystem, session }: DashboardProps) {
   const [records, setRecords] = useState(initialDevices);
   const [claims, setClaims] = useState(initialClaims);
   const [staff, setStaff] = useState(initialStaff);
@@ -226,7 +227,7 @@ export function Dashboard({ initialDevices, initialClaims, initialStaff, initial
         )}
         {view === "devices" && <DeviceList devices={filteredDevices} query={query} onQuery={setQuery} onNewTest={() => setModalOpen(true)} canCreate={canTestDevices} />}
         {view === "sales" && <SalesPanel devices={records} canActivate={canActivateDeviceSales} warrantyMonths={settings.warrantyMonths} onDeviceChange={updateDevice} onAuditChange={refreshAudit} />}
-        {view === "warranties" && <Warranties records={records} claims={claims} onClaimUpdate={(updated) => setClaims((current) => current.map((claim) => claim.id === updated.id ? updated : claim))} />}
+        {view === "warranties" && <Warranties records={records} claims={claims} assignees={initialClaimAssignees} currentStaffId={session.id} onClaimUpdate={(updated) => setClaims((current) => current.map((claim) => claim.id === updated.id ? updated : claim))} />}
         {view === "reports" && <Reports records={records} />}
         {view === "staff" && isOwner && <StaffPanel staff={staff} audit={audit} currentStaffId={session.id} onStaffChange={setStaff} onAuditChange={refreshAudit} />}
         {view === "settings" && <SettingsPanel settings={settings} session={session} initialSystem={initialSystem} onSettingsChange={setSettings} onAuditChange={refreshAudit} />}
@@ -311,93 +312,173 @@ function DeviceList({ devices, query, canCreate, onQuery, onNewTest }: { devices
   return <section className="page-section"><div className="section-head"><div><div className="eyebrow">{devices.length} records</div><h2>Device inventory</h2></div><div className="row-actions"><input className="search" value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Search name, serial or passport" aria-label="Search device passports" />{canCreate && <button className="button primary" onClick={onNewTest}>+ New test</button>}</div></div><div className="panel">{devices.length ? <DeviceTable devices={devices} /> : <div className="empty-state">No passports match &quot;{query}&quot;.</div>}</div></section>;
 }
 
-function Warranties({ records, claims, onClaimUpdate }: { records: DeviceRecord[]; claims: WarrantyClaimSummary[]; onClaimUpdate: (claim: WarrantyClaimSummary) => void }) {
-  const [selectedId, setSelectedId] = useState(claims[0]?.id ?? "");
-  const [nextStatus, setNextStatus] = useState<ClaimStatus>(claims[0]?.status ?? "New");
+type ClaimQueueFilter = "Open" | "Mine" | "Overdue" | "Urgent" | "All";
+
+function Warranties({ records, claims, assignees, currentStaffId, onClaimUpdate }: { records: DeviceRecord[]; claims: WarrantyClaimSummary[]; assignees: ClaimAssignee[]; currentStaffId: string; onClaimUpdate: (claim: WarrantyClaimSummary) => void }) {
+  const firstClaim = claims.find((claim) => claim.status !== "Completed" && claim.status !== "Rejected") ?? claims[0];
+  const [selectedId, setSelectedId] = useState(firstClaim?.id ?? "");
+  const [filter, setFilter] = useState<ClaimQueueFilter>(claims.some((claim) => claim.status !== "Completed" && claim.status !== "Rejected") ? "Open" : "All");
+  const [nextStatus, setNextStatus] = useState<ClaimStatus>(firstClaim?.status ?? "New");
   const [publicNote, setPublicNote] = useState("");
+  const [priority, setPriority] = useState<ClaimPriority>(firstClaim?.priority ?? "Normal");
+  const [assignedToId, setAssignedToId] = useState(firstClaim?.assignedToId ?? "");
+  const [dueDate, setDueDate] = useState(firstClaim?.dueDate ?? "");
+  const [internalNote, setInternalNote] = useState("");
   const [updateError, setUpdateError] = useState("");
+  const [serviceSuccess, setServiceSuccess] = useState("");
   const [updating, setUpdating] = useState(false);
   const [referenceTime] = useState(() => Date.now());
-  const selected = claims.find((claim) => claim.id === selectedId) ?? claims[0];
+  const today = new Date(referenceTime).toISOString().slice(0, 10);
+  const isOpen = (claim: WarrantyClaimSummary) => claim.status !== "Completed" && claim.status !== "Rejected";
+  const isOverdue = (claim: WarrantyClaimSummary) => isOpen(claim) && claim.dueDate < today;
+  const visibleClaims = claims.filter((claim) => {
+    if (filter === "Open") return isOpen(claim);
+    if (filter === "Mine") return isOpen(claim) && claim.assignedToId === currentStaffId;
+    if (filter === "Overdue") return isOverdue(claim);
+    if (filter === "Urgent") return isOpen(claim) && claim.priority === "Urgent";
+    return true;
+  });
+  const selected = claims.find((claim) => claim.id === selectedId) ?? visibleClaims[0] ?? claims[0];
   const activeCoverage = records.filter((device) => {
     const expiry = Date.parse(device.warrantyEnds);
     return Number.isFinite(expiry) && expiry + 24 * 60 * 60 * 1000 > referenceTime;
   }).length;
-  const openClaims = claims.filter((claim) => claim.status !== "Completed" && claim.status !== "Rejected").length;
-  const completedClaims = claims.filter((claim) => claim.status === "Completed").length;
+  const openClaims = claims.filter(isOpen).length;
+  const overdueClaims = claims.filter(isOverdue).length;
+
+  function syncServiceFields(claim: WarrantyClaimSummary) {
+    setPriority(claim.priority);
+    setAssignedToId(claim.assignedToId);
+    setDueDate(claim.dueDate);
+  }
 
   function chooseClaim(claim: WarrantyClaimSummary) {
     setSelectedId(claim.id);
     setNextStatus(claim.status);
+    syncServiceFields(claim);
     setPublicNote("");
+    setInternalNote("");
     setUpdateError("");
+    setServiceSuccess("");
   }
 
-  async function updateClaim() {
-    if (!selected) return;
+  function chooseFilter(nextFilter: ClaimQueueFilter) {
+    setFilter(nextFilter);
+    const first = claims.find((claim) => {
+      if (nextFilter === "Open") return isOpen(claim);
+      if (nextFilter === "Mine") return isOpen(claim) && claim.assignedToId === currentStaffId;
+      if (nextFilter === "Overdue") return isOverdue(claim);
+      if (nextFilter === "Urgent") return isOpen(claim) && claim.priority === "Urgent";
+      return true;
+    });
+    if (first) chooseClaim(first);
+  }
+
+  async function sendClaimUpdate(body: Record<string, unknown>) {
+    if (!selected) return null;
     setUpdating(true);
     setUpdateError("");
+    setServiceSuccess("");
     const response = await fetch(`/api/claims/${encodeURIComponent(selected.id)}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ status: nextStatus, note: publicNote }),
+      body: JSON.stringify(body),
     });
     const result = await response.json().catch(() => ({ error: "The server returned an invalid response." }));
+    setUpdating(false);
     if (!response.ok) {
       setUpdateError(result.error ?? "The claim could not be updated.");
-      setUpdating(false);
-      return;
+      return null;
     }
-    onClaimUpdate(result.claim as WarrantyClaimSummary);
-    setPublicNote("");
-    setUpdating(false);
+    const updated = result.claim as WarrantyClaimSummary;
+    onClaimUpdate(updated);
+    setNextStatus(updated.status);
+    syncServiceFields(updated);
+    return updated;
   }
 
+  async function updateCustomer() {
+    const updated = await sendClaimUpdate({ status: nextStatus, note: publicNote });
+    if (updated) {
+      setPublicNote("");
+      if (filter === "Open" && (updated.status === "Completed" || updated.status === "Rejected")) setFilter("All");
+      setServiceSuccess("Customer timeline updated.");
+    }
+  }
+
+  async function updateServicePlan() {
+    const updated = await sendClaimUpdate({ priority, assignedToId, dueDate, internalNote });
+    if (updated) {
+      setInternalNote("");
+      setServiceSuccess("Internal service plan saved.");
+    }
+  }
+
+  const serviceChanged = selected && (priority !== selected.priority || assignedToId !== selected.assignedToId || dueDate !== selected.dueDate || Boolean(internalNote.trim()));
+
   return (
-    <section className="page-section">
-      <div className="section-head"><div><div className="eyebrow">{claims.length} customer requests</div><h2>Warranty pipeline</h2></div></div>
-      <section className="stats"><Stat label="Active coverage" value={String(activeCoverage)} indicator="Current" /><Stat label="New claims" value={String(claims.filter((claim) => claim.status === "New").length)} indicator="Inbox" /><Stat label="Open claims" value={String(openClaims)} indicator={openClaims ? "Action needed" : "Clear"} /><Stat label="Completed" value={String(completedClaims)} indicator="All time" /></section>
+    <section className="page-section service-desk-page">
+      <div className="section-head"><div><div className="eyebrow">{claims.length} customer requests</div><h2>Warranty service desk</h2></div></div>
+      <section className="stats"><Stat label="Active coverage" value={String(activeCoverage)} indicator="Current" /><Stat label="New claims" value={String(claims.filter((claim) => claim.status === "New").length)} indicator="Inbox" /><Stat label="Open service jobs" value={String(openClaims)} indicator={openClaims ? "Action needed" : "Clear"} /><Stat label="Overdue SLA" value={String(overdueClaims)} indicator={overdueClaims ? "Escalate" : "On track"} /></section>
 
       {claims.length ? (
         <div className="claims-workspace">
           <section className="panel claims-inbox">
-            <div className="panel-head"><div><h3 className="panel-title">Claims inbox</h3><p className="panel-subtitle">Newest activity appears first</p></div></div>
+            <div className="panel-head claim-inbox-head"><div><h3 className="panel-title">Service queue</h3><p className="panel-subtitle">Assignment, priority and SLA in one view</p></div></div>
+            <div className="claim-filters" aria-label="Claim queue filters">{(["Open", "Mine", "Overdue", "Urgent", "All"] as ClaimQueueFilter[]).map((item) => <button type="button" key={item} className={filter === item ? "active" : ""} onClick={() => chooseFilter(item)}>{item}</button>)}</div>
             <div className="claim-list">
-              {claims.map((claim) => (
+              {visibleClaims.map((claim) => (
                 <button type="button" key={claim.id} className={`claim-list-item ${selected?.id === claim.id ? "selected" : ""}`} onClick={() => chooseClaim(claim)}>
-                  <span className={`claim-status status-${claim.status.toLowerCase()}`}>{claim.status}</span>
+                  <span className="claim-list-badges"><span className={`claim-status status-${claim.status.toLowerCase()}`}>{claim.status}</span><span className={`priority-chip priority-${claim.priority.toLowerCase()}`}>{claim.priority}</span></span>
                   <strong>{claim.deviceName}</strong>
                   <span>{claim.category} • {claim.customerName}</span>
-                  <small>{claim.id} • {formatClaimDate(claim.updatedAt)}</small>
+                  <small>{claim.assignedToName} • <b className={isOverdue(claim) ? "overdue-text" : ""}>{isOverdue(claim) ? "Overdue" : `Due ${formatShortDate(claim.dueDate)}`}</b></small>
                 </button>
               ))}
+              {!visibleClaims.length && <div className="claim-filter-empty"><strong>Queue is clear</strong><span>No claims match the {filter.toLowerCase()} filter.</span></div>}
             </div>
           </section>
 
           {selected && (
             <section className="panel claim-detail">
               <div className="claim-detail-head">
-                <div><div className="eyebrow">{selected.id}</div><h3>{selected.category} claim</h3><p>{selected.deviceName} • {selected.deviceId}</p></div>
-                <span className={`coverage-chip ${selected.warrantyValid ? "active" : "expired"}`}>{selected.warrantyValid ? "Coverage confirmed" : "Coverage review"}</span>
+                <div><div className="eyebrow">{selected.id}</div><h3>{selected.category} service job</h3><p>{selected.deviceName} • {selected.deviceId}</p></div>
+                <div className="claim-head-actions"><span className={`coverage-chip ${selected.warrantyValid ? "active" : "expired"}`}>{selected.warrantyValid ? "Coverage confirmed" : "Coverage review"}</span><a className="button secondary small" href={`/job-sheet/${encodeURIComponent(selected.id)}`} target="_blank" rel="noreferrer">Print job sheet</a></div>
               </div>
-              <div className="claim-detail-grid">
+              <div className="claim-detail-grid service-detail-grid">
                 <div><span>Customer</span><strong>{selected.customerName}</strong></div>
                 <div><span>Contact</span><strong>{selected.customerEmail || selected.customerPhone}</strong>{selected.customerEmail && selected.customerPhone && <small>{selected.customerPhone}</small>}</div>
+                <div><span>Assigned to</span><strong>{selected.assignedToName}</strong></div>
+                <div><span>Service due</span><strong className={isOverdue(selected) ? "overdue-text" : ""}>{formatShortDate(selected.dueDate)}{isOverdue(selected) ? " · Overdue" : ""}</strong></div>
                 <div><span>Submitted</span><strong>{formatClaimDate(selected.createdAt)}</strong></div>
                 <div><span>Evidence</span><strong>{selected.photoCount} photo{selected.photoCount === 1 ? "" : "s"}</strong></div>
               </div>
               <div className="claim-description-box"><span>Customer description</span><p>{selected.description}</p></div>
               <a className="text-link" href={`/claim/${selected.trackingToken}`} target="_blank" rel="noreferrer">Open private customer tracker ↗</a>
 
+              <div className="service-plan-box">
+                <div><h4>Internal service plan</h4><p>Assignment and technician notes stay private to shop staff.</p></div>
+                <div className="service-plan-fields">
+                  <label>Priority<select value={priority} onChange={(event) => setPriority(event.target.value as ClaimPriority)}>{claimPriorities.map((item) => <option key={item}>{item}</option>)}</select></label>
+                  <label>Assigned staff<select value={assignedToId} onChange={(event) => setAssignedToId(event.target.value)}><option value="">Unassigned</option>{assignees.map((member) => <option value={member.id} key={member.id}>{member.name} · {member.role}</option>)}</select></label>
+                  <label>Due date<input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></label>
+                  <label className="service-note-field">Internal repair note<textarea value={internalNote} onChange={(event) => setInternalNote(event.target.value)} maxLength={1200} placeholder="Diagnosis, parts required, test results or handover notes" /></label>
+                </div>
+                <button className="button primary" type="button" disabled={updating || !serviceChanged} onClick={updateServicePlan}>{updating ? "Saving…" : "Save service plan"}</button>
+              </div>
+
+              {selected.internalNotes.length > 0 && <div className="internal-note-history"><div><h4>Repair history</h4><span>{selected.internalNotes.length} private note{selected.internalNotes.length === 1 ? "" : "s"}</span></div>{selected.internalNotes.map((note) => <article key={note.id}><p>{note.note}</p><small>{note.actor} • {formatClaimDate(note.createdAt)}</small></article>)}</div>}
+
               <div className="claim-update-box">
                 <div><h4>Update customer</h4><p>This status and note will appear on the private tracking page.</p></div>
                 <div className="claim-update-fields">
                   <label>Status<select value={nextStatus} onChange={(event) => setNextStatus(event.target.value as ClaimStatus)}>{claimStatuses.map((status) => <option key={status}>{status}</option>)}</select></label>
-                  <label>Customer update<textarea value={publicNote} onChange={(event) => setPublicNote(event.target.value)} maxLength={600} placeholder="Optional — a clear default update is used when empty" /></label>
+                  <label>Customer update<textarea value={publicNote} onChange={(event) => setPublicNote(event.target.value)} maxLength={600} placeholder="Optional - a clear default update is used when the status changes" /></label>
                 </div>
-                {updateError && <div className="error-box" role="alert">{updateError}</div>}
-                <button className="button primary" type="button" disabled={updating || (nextStatus === selected.status && !publicNote.trim())} onClick={updateClaim}>{updating ? "Saving update…" : "Save status update"}</button>
+                <button className="button primary" type="button" disabled={updating || (nextStatus === selected.status && !publicNote.trim())} onClick={updateCustomer}>{updating ? "Saving…" : "Publish customer update"}</button>
               </div>
+              {updateError && <div className="error-box claim-update-message" role="alert">{updateError}</div>}
+              {serviceSuccess && <div className="success-box claim-update-message" role="status">{serviceSuccess}</div>}
             </section>
           )}
         </div>
@@ -410,6 +491,10 @@ function Warranties({ records, claims, onClaimUpdate }: { records: DeviceRecord[
 
 function formatClaimDate(value: string) {
   return new Date(value).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function formatShortDate(value: string) {
+  return new Date(`${value}T12:00:00`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 function StaffPanel({ staff, audit, currentStaffId, onStaffChange, onAuditChange }: { staff: StaffAccount[]; audit: AuditEvent[]; currentStaffId: string; onStaffChange: (staff: StaffAccount[]) => void; onAuditChange: () => Promise<void> }) {

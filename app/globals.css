@@ -2331,6 +2331,46 @@ a {
 .status-rejected { color: #8a3d34; background: #fae8e5; }
 .status-completed { color: #4f5b55; background: #e9eeeb; }
 
+.priority-chip {
+  display: inline-flex;
+  width: max-content;
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 7px;
+  font-weight: 850;
+}
+
+.priority-low { color: #52645b; background: #edf2ee; }
+.priority-normal { color: #365b70; background: #e8f1f5; }
+.priority-high { color: #8a5b16; background: #fff0cf; }
+.priority-urgent { color: #923f38; background: #fbe5e2; }
+
+.claim-filters {
+  display: flex;
+  gap: 5px;
+  padding: 0 17px 13px;
+  overflow-x: auto;
+}
+
+.claim-filters button {
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: white;
+  font: inherit;
+  font-size: 8px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.claim-filters button:hover,
+.claim-filters button.active {
+  color: var(--forest);
+  border-color: #bbd1ad;
+  background: #f1f7e9;
+}
+
 .claims-workspace {
   display: grid;
   grid-template-columns: minmax(280px, .75fr) minmax(0, 1.25fr);
@@ -2366,6 +2406,26 @@ a {
 .claim-list-item strong { margin-top: 3px; font-size: 11px; }
 .claim-list-item > span:not(.claim-status) { color: var(--muted); font-size: 9px; }
 .claim-list-item small { color: #8a9790; font-size: 8px; }
+.claim-list-item small b { font-weight: 780; }
+
+.claim-list-badges {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+}
+
+.claim-filter-empty {
+  display: grid;
+  gap: 5px;
+  padding: 35px 20px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.claim-filter-empty strong { color: var(--forest); font-size: 11px; }
+.claim-filter-empty span { font-size: 8px; }
+.overdue-text { color: #a3443b !important; }
 
 .claim-detail { padding: 24px; }
 
@@ -2386,6 +2446,12 @@ a {
   margin: 0;
   color: var(--muted);
   font-size: 9px;
+}
+
+.claim-head-actions {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
 }
 
 .claim-detail-grid {
@@ -2411,6 +2477,7 @@ a {
 
 .claim-detail-grid strong { overflow-wrap: anywhere; font-size: 10px; }
 .claim-detail-grid small { color: var(--muted); font-size: 8px; }
+.service-detail-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
 .claim-description-box {
   margin: 10px 0 12px;
@@ -2448,6 +2515,77 @@ a {
 
 .claim-update-fields textarea { min-height: 76px; }
 .claim-update-box > .button { justify-self: end; }
+
+.service-plan-box {
+  display: grid;
+  gap: 14px;
+  margin-top: 21px;
+  padding: 17px;
+  border: 1px solid #dbe4e0;
+  border-radius: 14px;
+  background: #f5f8f7;
+}
+
+.service-plan-box h4,
+.internal-note-history h4 { margin: 0; font-size: 12px; }
+.service-plan-box > div > p { margin: 3px 0 0; color: var(--muted); font-size: 8px; }
+
+.service-plan-fields {
+  display: grid;
+  grid-template-columns: .7fr 1.2fr .8fr;
+  gap: 10px;
+}
+
+.service-plan-fields label {
+  display: grid;
+  gap: 6px;
+  color: #526159;
+  font-size: 8px;
+  font-weight: 760;
+}
+
+.service-plan-fields select,
+.service-plan-fields input,
+.service-plan-fields textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid #dce5df;
+  border-radius: 9px;
+  color: var(--ink);
+  background: white;
+  font: inherit;
+  outline: none;
+}
+
+.service-plan-fields select:focus,
+.service-plan-fields input:focus,
+.service-plan-fields textarea:focus { border-color: var(--forest-2); box-shadow: 0 0 0 3px rgba(72, 117, 85, .11); }
+.service-note-field { grid-column: 1 / -1; }
+.service-plan-fields textarea { min-height: 82px; resize: vertical; }
+.service-plan-box > .button { justify-self: end; }
+
+.internal-note-history {
+  display: grid;
+  gap: 9px;
+  margin-top: 13px;
+  padding: 15px 17px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.internal-note-history > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.internal-note-history > div > span { color: var(--muted); font-size: 8px; }
+.internal-note-history article { padding-top: 9px; border-top: 1px solid var(--line); }
+.internal-note-history article p { margin: 0; color: #43534a; font-size: 9px; line-height: 1.6; white-space: pre-wrap; }
+.internal-note-history article small { display: block; margin-top: 6px; color: var(--muted); font-size: 8px; }
+.claim-update-message { margin-top: 12px; }
 
 .empty-claims {
   display: grid;
@@ -3490,6 +3628,87 @@ a {
 .danger-button { justify-content: center; color: white; border-color: #bd4b4b; background: #bd4b4b; }
 .danger-button:hover { background: #a63d3d; }
 
+/* Authenticated A4 warranty service job sheet. */
+.job-sheet-page {
+  min-height: 100vh;
+  padding: 28px;
+  background: #eef2ed;
+}
+
+.job-sheet-toolbar {
+  display: flex;
+  max-width: 920px;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 auto 16px;
+}
+
+.job-sheet-paper {
+  max-width: 920px;
+  min-height: 1120px;
+  margin: 0 auto;
+  padding: 46px 52px;
+  color: #17241d;
+  background: white;
+  box-shadow: 0 18px 60px rgba(27, 48, 35, .12);
+}
+
+.job-sheet-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 30px;
+  padding-bottom: 24px;
+  border-bottom: 3px solid var(--forest);
+}
+
+.job-sheet-header h1 { margin: 5px 0; font-size: 27px; letter-spacing: -.04em; }
+.job-sheet-header p { margin: 0; color: var(--muted); font-size: 10px; }
+.job-sheet-id { display: grid; justify-items: end; gap: 6px; }
+.job-sheet-id > span { color: var(--muted); font-size: 8px; }
+.job-sheet-id > strong { font-size: 14px; }
+.job-sheet-id > em { font-style: normal; }
+
+.job-sheet-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 19px 0 24px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.job-sheet-summary > div { display: grid; gap: 5px; padding: 13px; border-right: 1px solid var(--line); }
+.job-sheet-summary > div:last-child { border-right: 0; }
+.job-sheet-summary span,
+.job-sheet-grid span { color: var(--muted); font-size: 8px; }
+.job-sheet-summary strong,
+.job-sheet-grid strong { font-size: 10px; }
+
+.job-sheet-section { margin-top: 23px; }
+.job-sheet-section h2 { margin: 0 0 11px; padding-bottom: 7px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.job-sheet-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.job-sheet-grid > div { display: grid; gap: 4px; padding: 10px 12px; border-radius: 8px; background: #f6f8f5; }
+.job-sheet-grid strong { overflow-wrap: anywhere; }
+
+.job-sheet-issue { padding: 14px; border-left: 3px solid var(--lime); background: #f7f9f2; }
+.job-sheet-issue > strong { font-size: 11px; }
+.job-sheet-issue p { margin: 7px 0; font-size: 10px; line-height: 1.55; white-space: pre-wrap; }
+.job-sheet-issue small { color: var(--muted); font-size: 8px; }
+
+.job-sheet-note-list { display: grid; gap: 8px; }
+.job-sheet-note-list article { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.job-sheet-note-list p { margin: 0; font-size: 9px; line-height: 1.5; white-space: pre-wrap; }
+.job-sheet-note-list small { display: block; margin-top: 5px; color: var(--muted); font-size: 8px; }
+.job-sheet-checks { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 20px; margin-bottom: 17px; font-size: 9px; }
+.job-sheet-write-lines { display: grid; gap: 8px; margin-top: 14px; }
+.job-sheet-write-lines > strong { font-size: 9px; }
+.job-sheet-write-lines > span { display: block; height: 17px; border-bottom: 1px solid #aeb9b1; }
+
+.job-sheet-signatures { display: grid; grid-template-columns: 1fr 1fr .5fr; gap: 28px; margin-top: 45px; }
+.job-sheet-signatures > div { padding-top: 7px; border-top: 1px solid #7f8b84; }
+.job-sheet-signatures span { color: var(--muted); font-size: 8px; }
+.job-sheet-footer { margin: 28px 0 0; color: #87928c; font-size: 7px; text-align: center; }
+
 @media (max-width: 1060px) {
   .app-shell { grid-template-columns: 82px minmax(0,1fr); }
   .sidebar { padding-inline: 12px; }
@@ -3557,7 +3776,9 @@ a {
   .tracking-layout { grid-template-columns: 1fr; }
   .tracking-photo-grid { grid-template-columns: 1fr; }
   .claim-detail-head { flex-direction: column; }
-  .claim-detail-grid, .claim-update-fields { grid-template-columns: 1fr; }
+  .claim-head-actions { width: 100%; justify-items: start; }
+  .claim-detail-grid, .claim-update-fields, .service-plan-fields { grid-template-columns: 1fr; }
+  .service-note-field { grid-column: auto; }
   .staff-create-form, .settings-fields, .staff-editor-fields { grid-template-columns: 1fr; }
   .sale-search { min-width: 100%; }
   .sales-workspace { gap: 14px; }
@@ -3593,6 +3814,12 @@ a {
   .login-panel { min-height: 100vh; padding: 28px; }
   .label-controls { align-items: stretch; flex-direction: column; }
   .label-actions { flex-wrap: wrap; }
+  .job-sheet-page { padding: 12px; }
+  .job-sheet-paper { min-height: 0; padding: 25px 20px; }
+  .job-sheet-header { flex-direction: column; }
+  .job-sheet-id { justify-items: start; }
+  .job-sheet-summary, .job-sheet-grid { grid-template-columns: repeat(2, 1fr); }
+  .job-sheet-signatures { grid-template-columns: 1fr; }
 }
 
 @media print {
@@ -3637,6 +3864,13 @@ a {
   .warranty-nav, .warranty-actions, .customer-card-links { display: none; }
   .digital-warranty-card { border: 0; border-radius: 0; box-shadow: none; }
   .digital-warranty-hero { print-color-adjust: exact; }
+
+  @page { size: A4; margin: 12mm; }
+  body:has(.job-sheet-page) { background: white; }
+  .job-sheet-page { padding: 0; background: white; }
+  .job-sheet-toolbar { display: none; }
+  .job-sheet-paper { max-width: none; min-height: 0; padding: 0; box-shadow: none; }
+  .job-sheet-summary, .job-sheet-grid > div, .job-sheet-issue, .priority-chip { print-color-adjust: exact; }
 }
 
 @media (prefers-reduced-motion: reduce) {

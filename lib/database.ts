@@ -12,11 +12,17 @@ import {
 } from "./inspection";
 import {
   isClaimCategory,
+  isClaimPriority,
+  isClaimStatus,
+  type ClaimAssignee,
   type ClaimEvent,
+  type ClaimInternalNote,
+  type ClaimPriority,
   type ClaimStatus,
   type PublicWarrantyClaim,
   type WarrantyClaimInput,
   type WarrantyClaimSummary,
+  type WarrantyClaimUpdate,
 } from "./claims";
 import { hashPassword, verifyPassword } from "./passwords";
 import {
@@ -95,11 +101,22 @@ type ClaimRow = {
   category: WarrantyClaimSummary["category"];
   description: string;
   status: ClaimStatus;
+  priority: ClaimPriority;
+  assigned_to_id: string | null;
+  assigned_to_name: string | null;
+  due_date: string;
   warranty_valid: number;
   warranty_ends: string;
   created_at: string;
   updated_at: string;
   photo_count: number;
+};
+
+type ClaimInternalNoteRow = {
+  id: string;
+  note: string;
+  actor: string;
+  created_at: string;
 };
 
 type ClaimEventRow = {
@@ -193,6 +210,25 @@ function ensureClaimSchema(database: DatabaseSync) {
     CREATE INDEX IF NOT EXISTS idx_warranty_claims_device ON warranty_claims(device_id);
     CREATE INDEX IF NOT EXISTS idx_warranty_claims_status ON warranty_claims(status);
     CREATE INDEX IF NOT EXISTS idx_claim_events_claim ON claim_events(claim_id, created_at);
+  `);
+
+  const columns = new Set((database.prepare("PRAGMA table_info(warranty_claims)").all() as Array<{ name: string }>).map((column) => column.name));
+  if (!columns.has("priority")) database.exec("ALTER TABLE warranty_claims ADD COLUMN priority TEXT NOT NULL DEFAULT 'Normal'");
+  if (!columns.has("assigned_to_id")) database.exec("ALTER TABLE warranty_claims ADD COLUMN assigned_to_id TEXT");
+  if (!columns.has("due_date")) database.exec("ALTER TABLE warranty_claims ADD COLUMN due_date TEXT NOT NULL DEFAULT ''");
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS claim_internal_notes (
+      id TEXT PRIMARY KEY,
+      claim_id TEXT NOT NULL,
+      note TEXT NOT NULL,
+      actor TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (claim_id) REFERENCES warranty_claims(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_claim_internal_notes_claim ON claim_internal_notes(claim_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_warranty_claims_assignee ON warranty_claims(assigned_to_id);
+    CREATE INDEX IF NOT EXISTS idx_warranty_claims_due_date ON warranty_claims(due_date);
+    UPDATE warranty_claims SET due_date = date(created_at, '+3 days') WHERE due_date = '';
   `);
 }
 
@@ -791,13 +827,19 @@ export function getPassportPhoto(deviceId: string, photoId: string) {
 }
 
 const claimSummarySql = `
-  SELECT c.*, d.name AS device_name, d.serial, d.warranty_ends,
+  SELECT c.*, d.name AS device_name, d.serial, d.warranty_ends, a.name AS assigned_to_name,
     (SELECT COUNT(*) FROM claim_photos p WHERE p.claim_id = c.id) AS photo_count
   FROM warranty_claims c
   JOIN devices d ON d.id = c.device_id
+  LEFT JOIN staff_users a ON a.id = c.assigned_to_id
 `;
 
-function rowToClaimSummary(row: ClaimRow): WarrantyClaimSummary {
+function listClaimInternalNotes(database: DatabaseSync, claimId: string): ClaimInternalNote[] {
+  const rows = database.prepare("SELECT id, note, actor, created_at FROM claim_internal_notes WHERE claim_id = ? ORDER BY created_at DESC, id DESC").all(claimId) as unknown as ClaimInternalNoteRow[];
+  return rows.map((row) => ({ id: row.id, note: row.note, actor: row.actor, createdAt: row.created_at }));
+}
+
+function rowToClaimSummary(row: ClaimRow, database = getDatabase()): WarrantyClaimSummary {
   return {
     id: row.id,
     trackingToken: row.tracking_token,
@@ -810,17 +852,34 @@ function rowToClaimSummary(row: ClaimRow): WarrantyClaimSummary {
     category: row.category,
     description: row.description,
     status: row.status,
+    priority: row.priority,
+    assignedToId: row.assigned_to_id ?? "",
+    assignedToName: row.assigned_to_name ?? "Unassigned",
+    dueDate: row.due_date,
     warrantyValid: Boolean(row.warranty_valid),
     warrantyEnds: row.warranty_ends,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     photoCount: row.photo_count,
+    internalNotes: listClaimInternalNotes(database, row.id),
   };
 }
 
 export function listWarrantyClaims(): WarrantyClaimSummary[] {
-  const rows = getDatabase().prepare(`${claimSummarySql} ORDER BY c.updated_at DESC, c.id DESC`).all() as unknown as ClaimRow[];
-  return rows.map(rowToClaimSummary);
+  const database = getDatabase();
+  const rows = database.prepare(`${claimSummarySql} ORDER BY c.updated_at DESC, c.id DESC`).all() as unknown as ClaimRow[];
+  return rows.map((row) => rowToClaimSummary(row, database));
+}
+
+export function findWarrantyClaimById(id: string): WarrantyClaimSummary | null {
+  const database = getDatabase();
+  const row = database.prepare(`${claimSummarySql} WHERE c.id = ?`).get(id) as unknown as ClaimRow | undefined;
+  return row ? rowToClaimSummary(row, database) : null;
+}
+
+export function listClaimAssignees(): ClaimAssignee[] {
+  const rows = getDatabase().prepare("SELECT id, name, role FROM staff_users WHERE active = 1 ORDER BY role, name").all() as Array<{ id: string; name: string; role: ClaimAssignee["role"] }>;
+  return rows.map((row) => ({ id: row.id, name: row.name, role: row.role }));
 }
 
 export function createWarrantyClaim(deviceId: string, input: WarrantyClaimInput): WarrantyClaimSummary {
@@ -844,6 +903,7 @@ export function createWarrantyClaim(deviceId: string, input: WarrantyClaimInput)
 
   const preparedPhotos = input.photos.map(parsePhoto);
   const now = new Date().toISOString();
+  const dueDate = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10);
   const claimId = `CLM-${now.slice(2, 10).replaceAll("-", "")}-${randomUUID().slice(0, 4).toUpperCase()}`;
   const trackingToken = randomBytes(18).toString("base64url");
   const warrantyValid = isWarrantyActive(saleRow.warranty_ends);
@@ -853,9 +913,9 @@ export function createWarrantyClaim(deviceId: string, input: WarrantyClaimInput)
     database.prepare(`
       INSERT INTO warranty_claims (
         id, tracking_token, device_id, customer_name, customer_email, customer_phone,
-        category, description, status, warranty_valid, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'New', ?, ?, ?)
-    `).run(claimId, trackingToken, deviceRow.id, customerName, customerEmail, customerPhone, input.category, description, warrantyValid ? 1 : 0, now, now);
+        category, description, status, priority, due_date, warranty_valid, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'New', 'Normal', ?, ?, ?, ?)
+    `).run(claimId, trackingToken, deviceRow.id, customerName, customerEmail, customerPhone, input.category, description, dueDate, warrantyValid ? 1 : 0, now, now);
     const insertPhoto = database.prepare("INSERT INTO claim_photos (id, claim_id, name, mime_type, data, created_at) VALUES (?, ?, ?, ?, ?, ?)");
     for (const photo of preparedPhotos) insertPhoto.run(randomUUID(), claimId, photo.name, photo.mimeType, photo.data, now);
     database.prepare("INSERT INTO claim_events (id, claim_id, status, note, actor, created_at) VALUES (?, ?, 'New', ?, 'Customer', ?)")
@@ -869,7 +929,7 @@ export function createWarrantyClaim(deviceId: string, input: WarrantyClaimInput)
   recordAuditEvent("Customer", "claim.created", `Submitted ${input.category} claim ${claimId} for ${deviceRow.id}.`);
 
   const row = database.prepare(`${claimSummarySql} WHERE c.id = ?`).get(claimId) as unknown as ClaimRow;
-  return rowToClaimSummary(row);
+  return rowToClaimSummary(row, database);
 }
 
 export function findPublicClaim(trackingToken: string): PublicWarrantyClaim | null {
@@ -879,11 +939,26 @@ export function findPublicClaim(trackingToken: string): PublicWarrantyClaim | nu
   if (!row) return null;
   const photos = database.prepare("SELECT id, name, mime_type FROM claim_photos WHERE claim_id = ? ORDER BY created_at, id").all(row.id) as unknown as PhotoRow[];
   const eventRows = database.prepare("SELECT id, status, note, actor, created_at FROM claim_events WHERE claim_id = ? ORDER BY created_at DESC, id DESC").all(row.id) as unknown as ClaimEventRow[];
-  const summary = rowToClaimSummary(row);
-  const { trackingToken: _trackingToken, customerEmail: _customerEmail, customerPhone: _customerPhone, ...publicSummary } = summary;
+  const summary = rowToClaimSummary(row, database);
+  const {
+    trackingToken: _trackingToken,
+    customerEmail: _customerEmail,
+    customerPhone: _customerPhone,
+    priority: _priority,
+    assignedToId: _assignedToId,
+    assignedToName: _assignedToName,
+    dueDate: _dueDate,
+    internalNotes: _internalNotes,
+    ...publicSummary
+  } = summary;
   void _trackingToken;
   void _customerEmail;
   void _customerPhone;
+  void _priority;
+  void _assignedToId;
+  void _assignedToName;
+  void _dueDate;
+  void _internalNotes;
   const events: ClaimEvent[] = eventRows.map((event) => ({
     id: event.id,
     status: event.status,
@@ -908,28 +983,64 @@ export function getClaimPhoto(trackingToken: string, photoId: string) {
   return row?.data ? { data: row.data, mimeType: row.mime_type, name: row.name } : null;
 }
 
-export function updateWarrantyClaimStatus(claimId: string, status: ClaimStatus, note: string, actor: string): WarrantyClaimSummary {
+export function updateWarrantyClaim(claimId: string, input: WarrantyClaimUpdate, actor: string): WarrantyClaimSummary {
   const database = getDatabase();
-  const current = database.prepare("SELECT status FROM warranty_claims WHERE id = ?").get(claimId) as { status: ClaimStatus } | undefined;
+  const current = database.prepare("SELECT status, priority, assigned_to_id, due_date FROM warranty_claims WHERE id = ?").get(claimId) as {
+    status: ClaimStatus;
+    priority: ClaimPriority;
+    assigned_to_id: string | null;
+    due_date: string;
+  } | undefined;
   if (!current) throw new Error("Warranty claim not found.");
-  const publicNote = note.trim().slice(0, 600) || defaultStatusNote(status);
+  if (input.status !== undefined && !isClaimStatus(input.status)) throw new Error("Choose a valid claim status.");
+  if (input.priority !== undefined && !isClaimPriority(input.priority)) throw new Error("Choose a valid service priority.");
+
+  const assignedToId = input.assignedToId === undefined ? (current.assigned_to_id ?? "") : input.assignedToId.trim();
+  if (assignedToId) {
+    const assignee = database.prepare("SELECT id FROM staff_users WHERE id = ? AND active = 1").get(assignedToId);
+    if (!assignee) throw new Error("Choose an active staff member for this claim.");
+  }
+
+  const dueDate = input.dueDate === undefined ? current.due_date : input.dueDate.trim();
+  const parsedDueDate = new Date(`${dueDate}T12:00:00.000Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || Number.isNaN(parsedDueDate.getTime()) || parsedDueDate.toISOString().slice(0, 10) !== dueDate) throw new Error("Choose a valid service due date.");
+  const maxDueDate = new Date(Date.now() + 366 * 86_400_000).toISOString().slice(0, 10);
+  if (dueDate > maxDueDate) throw new Error("The service due date must be within one year.");
+
+  const nextStatus = input.status ?? current.status;
+  const priority = input.priority ?? current.priority;
+  const publicNote = input.publicNote?.trim() ?? "";
+  if (publicNote.length > 600) throw new Error("Customer updates must be 600 characters or fewer.");
+  const internalNote = input.internalNote?.trim() ?? "";
+  if (internalNote.length > 1200) throw new Error("Internal notes must be 1200 characters or fewer.");
+  const statusChanged = nextStatus !== current.status;
+  const serviceChanged = priority !== current.priority || assignedToId !== (current.assigned_to_id ?? "") || dueDate !== current.due_date;
+  if (!statusChanged && !serviceChanged && !publicNote && !internalNote) throw new Error("Make a service change or add a note before saving.");
   const now = new Date().toISOString();
 
   database.exec("BEGIN");
   try {
-    database.prepare("UPDATE warranty_claims SET status = ?, updated_at = ? WHERE id = ?").run(status, now, claimId);
-    database.prepare("INSERT INTO claim_events (id, claim_id, status, note, actor, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(randomUUID(), claimId, status, publicNote, actor, now);
+    database.prepare("UPDATE warranty_claims SET status = ?, priority = ?, assigned_to_id = ?, due_date = ?, updated_at = ? WHERE id = ?")
+      .run(nextStatus, priority, assignedToId || null, dueDate, now, claimId);
+    if (statusChanged || publicNote) {
+      database.prepare("INSERT INTO claim_events (id, claim_id, status, note, actor, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+        .run(randomUUID(), claimId, nextStatus, publicNote || defaultStatusNote(nextStatus), actor, now);
+    }
+    if (internalNote) {
+      database.prepare("INSERT INTO claim_internal_notes (id, claim_id, note, actor, created_at) VALUES (?, ?, ?, ?, ?)")
+        .run(randomUUID(), claimId, internalNote, actor, now);
+    }
     database.exec("COMMIT");
   } catch (error) {
     database.exec("ROLLBACK");
     throw error;
   }
 
-  recordAuditEvent(actor, "claim.status", `Changed ${claimId} to ${status}.`);
+  const action = statusChanged ? "claim.status" : "claim.service";
+  recordAuditEvent(actor, action, statusChanged ? `Changed ${claimId} to ${nextStatus}.` : `Updated service plan for ${claimId}.`);
 
   const row = database.prepare(`${claimSummarySql} WHERE c.id = ?`).get(claimId) as unknown as ClaimRow;
-  return rowToClaimSummary(row);
+  return rowToClaimSummary(row, database);
 }
 
 function defaultStatusNote(status: ClaimStatus) {

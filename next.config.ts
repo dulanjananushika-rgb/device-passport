@@ -17,6 +17,7 @@ const nextConfig: NextConfig = {
       { source: "/:path*", headers: securityHeaders },
       { source: "/api/:path*", headers: [{ key: "Cache-Control", value: "no-store" }] },
       { source: "/warranty/:path*", headers: [{ key: "Cache-Control", value: "private, no-store, max-age=0" }] },
+      { source: "/job-sheet/:path*", headers: [{ key: "Cache-Control", value: "private, no-store, max-age=0" }] },
     ];
   },
 };

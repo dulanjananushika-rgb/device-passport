@@ -167,7 +167,24 @@ try {
 
   const claimsInbox = await expectOk(await fetch(`${baseUrl}/api/claims`, { headers: { cookie } }), "Claims inbox");
   const claimsPayload = await claimsInbox.json();
-  if (!claimsPayload.claims.some((item) => item.id === claim.id)) throw new Error("The submitted claim was not in the shop inbox.");
+  const inboxClaim = claimsPayload.claims.find((item) => item.id === claim.id);
+  if (!inboxClaim || inboxClaim.priority !== "Normal" || !inboxClaim.dueDate) throw new Error("The submitted claim did not enter the service queue with an SLA.");
+  const serviceDueDate = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
+  const privateRepairNote = `Private diagnosis ${runId}: battery calibration required.`;
+  const servicePlanUpdate = await expectOk(await fetch(`${baseUrl}/api/claims/${claim.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ priority: "Urgent", assignedToId: createdStaff.id, dueDate: serviceDueDate, internalNote: privateRepairNote }),
+  }), "Claim service plan update");
+  const { claim: plannedClaim } = await servicePlanUpdate.json();
+  if (plannedClaim.priority !== "Urgent" || plannedClaim.assignedToId !== createdStaff.id || plannedClaim.dueDate !== serviceDueDate || !plannedClaim.internalNotes.some((note) => note.note === privateRepairNote)) throw new Error("The internal service plan was not saved.");
+  const jobSheet = await expectOk(await fetch(`${baseUrl}/job-sheet/${claim.id}`, { headers: { cookie } }), "Private service job sheet");
+  const jobSheetHtml = await jobSheet.text();
+  if (!jobSheetHtml.includes(privateRepairNote) || !jobSheetHtml.includes("Warranty service job sheet")) throw new Error("The service job sheet did not include the private repair plan.");
+  const publicAfterServicePlan = await expectOk(await fetch(`${baseUrl}/claim/${claim.trackingToken}`), "Tracker after private service update");
+  if ((await publicAfterServicePlan.text()).includes(privateRepairNote)) throw new Error("An internal repair note leaked to the customer tracker.");
+  const unauthenticatedJobSheet = await fetch(`${baseUrl}/job-sheet/${claim.id}`, { redirect: "manual" });
+  if (![303, 307, 308].includes(unauthenticatedJobSheet.status)) throw new Error(`Unauthenticated job sheet expected a redirect, received ${unauthenticatedJobSheet.status}.`);
   const statusUpdate = await expectOk(await fetch(`${baseUrl}/api/claims/${claim.id}`, {
     method: "PATCH",
     headers: { "content-type": "application/json", cookie },
@@ -228,6 +245,9 @@ try {
     tracker: tracker.status,
     claimPhoto: claimPhoto.status,
     inbox: claimsInbox.status,
+    servicePlan: servicePlanUpdate.status,
+    jobSheet: jobSheet.status,
+    jobSheetProtected: unauthenticatedJobSheet.status,
     statusUpdate: statusUpdate.status,
     settings: settingsResponse.status,
     staffCreate: staffCreation.status,
