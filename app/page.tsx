@@ -6,6 +6,7 @@ import { getShopSettings, listAuditEvents, listClaimAssignees, listDevices, list
 import { listNotifications } from "../lib/notification-store";
 import { getSystemReadiness } from "../lib/readiness";
 import { Dashboard } from "./ui/Dashboard";
+import { getFinanceAnalytics } from "../lib/analytics";
 
 export const metadata: Metadata = {
   title: "DevicePassport | Verified device health",
@@ -24,13 +25,14 @@ export default async function Home() {
   return (
     <Dashboard
       initialDevices={listDevices()}
-      initialClaims={listWarrantyClaims()}
+      initialClaims={listWarrantyClaims(session.role !== "Support")}
       initialClaimAssignees={listClaimAssignees()}
       initialNotifications={listNotifications()}
       initialStaff={ownerData ? listStaffAccounts() : []}
       initialAudit={ownerData ? listAuditEvents() : []}
       initialSettings={getShopSettings()}
       initialSystem={ownerData ? getSystemReadiness() : null}
+      initialAnalytics={ownerData ? getFinanceAnalytics() : null}
       session={session}
     />
   );

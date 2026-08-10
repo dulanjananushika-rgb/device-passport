@@ -77,6 +77,8 @@ try {
   if (forbiddenStaff.status !== 403) throw new Error(`Support staff permission expected 403, received ${forbiddenStaff.status}.`);
   const forbiddenSystem = await fetch(`${baseUrl}/api/system`, { headers: { cookie: changedStaffCookie } });
   if (forbiddenSystem.status !== 403) throw new Error(`Support system permission expected 403, received ${forbiddenSystem.status}.`);
+  const forbiddenAnalytics = await fetch(`${baseUrl}/api/analytics`, { headers: { cookie: changedStaffCookie } });
+  if (forbiddenAnalytics.status !== 403) throw new Error(`Support analytics permission expected 403, received ${forbiddenAnalytics.status}.`);
 
   const report = JSON.parse(await readFile(new URL("../examples/sample-device-report.json", import.meta.url), "utf8"));
   report.device.serialNumber = serial;
@@ -96,6 +98,20 @@ try {
   const { device } = await imported.json();
   createdDeviceId = device.id;
   if (device.lifecycleStatus !== "Ready" || device.sale || device.warrantyEnds) throw new Error("A new verified passport did not enter the Ready lifecycle state.");
+
+  const financeUpdate = await expectOk(await fetch(`${baseUrl}/api/finance/devices/${device.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ purchaseCostLkr: "100000", refurbishmentCostLkr: "15000" }),
+  }), "Device finance update");
+  const financedDevice = (await financeUpdate.json()).device;
+  if (financedDevice.purchaseCostCents !== 10_000_000 || financedDevice.refurbishmentCostCents !== 1_500_000) throw new Error("Device costs were not stored as exact minor units.");
+  const forbiddenFinanceUpdate = await fetch(`${baseUrl}/api/finance/devices/${device.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie: changedStaffCookie },
+    body: JSON.stringify({ purchaseCostLkr: "1", refurbishmentCostLkr: "1" }),
+  });
+  if (forbiddenFinanceUpdate.status !== 403) throw new Error(`Support finance update permission expected 403, received ${forbiddenFinanceUpdate.status}.`);
 
   const readyNotifications = await expectOk(await fetch(`${baseUrl}/api/notifications`, { headers: { cookie } }), "Ready-stock notifications");
   const readyNotificationPayload = await readyNotifications.json();
@@ -131,6 +147,7 @@ try {
       customerPhone: "+94 77 000 0000",
       invoiceReference,
       soldAt: saleDateForReminder,
+      salePriceLkr: "160000",
     }),
   }), "Sale activation");
   const { device: activatedDevice } = await activation.json();
@@ -216,10 +233,16 @@ try {
   const servicePlanUpdate = await expectOk(await fetch(`${baseUrl}/api/claims/${claim.id}`, {
     method: "PATCH",
     headers: { "content-type": "application/json", cookie },
-    body: JSON.stringify({ priority: "Urgent", assignedToId: createdStaff.id, dueDate: serviceDueDate, internalNote: privateRepairNote }),
+    body: JSON.stringify({ priority: "Urgent", assignedToId: createdStaff.id, dueDate: serviceDueDate, internalNote: privateRepairNote, serviceCostLkr: "3500" }),
   }), "Claim service plan update");
   const { claim: plannedClaim } = await servicePlanUpdate.json();
-  if (plannedClaim.priority !== "Urgent" || plannedClaim.assignedToId !== createdStaff.id || plannedClaim.dueDate !== serviceDueDate || !plannedClaim.internalNotes.some((note) => note.note === privateRepairNote)) throw new Error("The internal service plan was not saved.");
+  if (plannedClaim.priority !== "Urgent" || plannedClaim.assignedToId !== createdStaff.id || plannedClaim.dueDate !== serviceDueDate || plannedClaim.serviceCostCents !== 350_000 || !plannedClaim.internalNotes.some((note) => note.note === privateRepairNote)) throw new Error("The internal service plan or warranty cost was not saved.");
+  const forbiddenServiceCost = await fetch(`${baseUrl}/api/claims/${claim.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie: changedStaffCookie },
+    body: JSON.stringify({ serviceCostLkr: "1" }),
+  });
+  if (forbiddenServiceCost.status !== 403) throw new Error(`Support warranty cost permission expected 403, received ${forbiddenServiceCost.status}.`);
   const jobSheet = await expectOk(await fetch(`${baseUrl}/job-sheet/${claim.id}`, { headers: { cookie } }), "Private service job sheet");
   const jobSheetHtml = await jobSheet.text();
   if (!jobSheetHtml.includes(privateRepairNote) || !jobSheetHtml.includes("Warranty service job sheet")) throw new Error("The service job sheet did not include the private repair plan.");
@@ -238,6 +261,16 @@ try {
   const auditResponse = await expectOk(await fetch(`${baseUrl}/api/audit`, { headers: { cookie } }), "Audit history");
   const auditPayload = await auditResponse.json();
   if (!auditPayload.audit.some((event) => event.summary.includes(staffEmail))) throw new Error("Staff audit activity was not recorded.");
+
+  const analyticsResponse = await expectOk(await fetch(`${baseUrl}/api/analytics`, { headers: { cookie } }), "Owner finance analytics");
+  const analyticsPayload = await analyticsResponse.json();
+  const analyticsDevice = analyticsPayload.analytics.devices.find((item) => item.deviceId === device.id);
+  if (!analyticsDevice || analyticsDevice.salePriceCents !== 16_000_000 || analyticsDevice.warrantyCostCents !== 350_000 || analyticsDevice.grossProfitCents !== 4_150_000) throw new Error("Finance analytics did not calculate the expected LKR 41,500 device profit.");
+  const analyticsExport = await expectOk(await fetch(`${baseUrl}/api/analytics/export`, { headers: { cookie } }), "Finance CSV export");
+  const analyticsCsv = await analyticsExport.text();
+  if (!analyticsExport.headers.get("content-type")?.includes("text/csv") || !analyticsCsv.includes(device.id) || !analyticsCsv.includes("41500.00")) throw new Error("The finance CSV did not contain the expected device profit row.");
+  const unauthenticatedAnalytics = await fetch(`${baseUrl}/api/analytics`);
+  if (unauthenticatedAnalytics.status !== 401) throw new Error(`Unauthenticated analytics expected 401, received ${unauthenticatedAnalytics.status}.`);
 
   const backupCreation = await expectOk(await fetch(`${baseUrl}/api/backups`, { method: "POST", headers: { cookie } }), "Manual database backup");
   const { backup } = await backupCreation.json();
@@ -314,6 +347,13 @@ try {
     postRestore: restoredSettings.status,
     loginRateLimit: rateLimitedLogin.status,
     supportSystemDenied: forbiddenSystem.status,
+    supportAnalyticsDenied: forbiddenAnalytics.status,
+    financeUpdate: financeUpdate.status,
+    supportFinanceDenied: forbiddenFinanceUpdate.status,
+    warrantyCostDenied: forbiddenServiceCost.status,
+    analytics: analyticsResponse.status,
+    analyticsExport: analyticsExport.status,
+    analyticsProtected: unauthenticatedAnalytics.status,
     deviceId: device.id,
     claimId: claim.id,
   }, null, 2));

@@ -42,6 +42,14 @@ export function canActivateSales(role: StaffRole) {
   return role === "Owner" || role === "Technician";
 }
 
+export function canRecordServiceCosts(role: StaffRole) {
+  return role === "Owner" || role === "Technician";
+}
+
+export function canViewFinance(role: StaffRole) {
+  return role === "Owner";
+}
+
 export function canManageStaff(role: StaffRole) {
   return role === "Owner";
 }

@@ -21,6 +21,8 @@ DevicePassport is an independent shop system for refurbished laptop health repor
 - Warranty service desk with assignment, priority, due-date/SLA filters, private repair notes, and printable job sheets
 - Notification centre for new claims, overdue SLAs, Ready stock, and 30/7-day warranty reminders
 - Click-to-send WhatsApp/email templates with composer-open and completion history
+- Owner-only profit and reliability analytics with exact purchase, refurbishment, sale, and warranty costs
+- Six-month revenue/profit charts, model failure rates, SLA/turnaround metrics, technician workload, and safe CSV export
 - Configurable shop branding, contact details, warranty defaults, and logo
 - Staff account management, password changes, and audit history
 - Automatic daily SQLite snapshots with 14-day retention
@@ -69,8 +71,8 @@ The smoke journey also verifies health checks, security headers, backup creation
 
 ## Shop administration
 
-- **Owner** can manage branding, warranty defaults, staff accounts, sales, claims, and device tests.
-- **Technician** can create device passports, activate sales, and manage warranty claims.
+- **Owner** can manage branding, warranty defaults, staff accounts, sales, claims, device tests, the private cost book, profit analytics, and CSV exports.
+- **Technician** can create device passports, activate sales, manage warranty claims, and record warranty repair costs without access to the profit dashboard.
 - **Support** can search customer handovers and manage claims, but cannot activate sales, create passports, or access staff administration.
 
 Use **Settings** to update the shop identity and your own password. Use **Staff** as an Owner to create accounts, change roles, reset passwords, disable access, and review the audit history. The configured warranty duration is applied when a sale is activated.
@@ -79,7 +81,7 @@ Use **Settings** to update the shop identity and your own password. Use **Staff*
 
 1. Complete the diagnostic inspection so the passport reaches **Ready**.
 2. Open **Sales** and search by passport ID, serial, model, buyer phone, email, or invoice.
-3. Record the buyer, one contact method, invoice reference, and sale date.
+3. Record the buyer, one contact method, invoice reference, selling price, and sale date.
 4. Activate the sale. The device becomes **Sold**, and its warranty dates are calculated from the sale date.
 5. Open, print, or copy the private QR warranty card for the buyer.
 6. Use the Sales dashboard to find customer records and follow up on warranties expiring within 30 days.
@@ -97,8 +99,19 @@ Use **Settings** to update the shop identity and your own password. Use **Staff*
 1. Open **Claims** and triage the queue using Open, Mine, Overdue, Urgent, or All.
 2. Assign the service job to an active staff member, choose its priority, and set a due date.
 3. Record diagnosis, parts, tests, and handover details as private internal notes. These notes are never included in the customer tracker.
-4. Print the authenticated A4 job sheet for the repair bench and final customer signature.
-5. Publish only the chosen status and customer-facing note to the private tracker.
+4. Owners or Technicians record the current warranty repair cost; only Owners see it combined with purchase and sale figures as profit.
+5. Print the authenticated A4 job sheet for the repair bench and final customer signature.
+6. Publish only the chosen status and customer-facing note to the private tracker.
+
+## Profit and reliability analytics
+
+1. Open **Analytics** as an Owner and complete purchase and parts/refurbishment costs in the device cost book.
+2. New sales capture the selling price during customer handover. Legacy sales without prices remain clearly marked as missing.
+3. Warranty service costs recorded in Claims are deducted automatically from the affected device's realized gross profit.
+4. Review revenue, gross profit, margin, stock investment, claim rate, warranty cost, SLA performance, and turnaround time from live SQLite data.
+5. Compare model failure rates and technician workload, then export the per-device ledger as CSV when deeper analysis is needed.
+
+Amounts are stored as integer minor units rather than floating-point values. Financial APIs and exports are server-enforced as Owner-only, and all cost changes are written to the audit history.
 
 ## Notification centre
 

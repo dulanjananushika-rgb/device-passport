@@ -19,10 +19,12 @@ import {
 import { SalesPanel } from "./SalesPanel";
 import { RecoveryPanel } from "./RecoveryPanel";
 import { NotificationCenter } from "./NotificationCenter";
+import { AnalyticsPanel } from "./AnalyticsPanel";
 import type { SystemReadiness } from "../../lib/readiness";
 import type { NotificationItem } from "../../lib/notifications";
+import type { FinanceAnalytics } from "../../lib/finance";
 
-type View = "overview" | "devices" | "sales" | "warranties" | "notifications" | "reports" | "staff" | "settings";
+type View = "overview" | "devices" | "sales" | "warranties" | "notifications" | "reports" | "analytics" | "staff" | "settings";
 type WizardStage = 1 | 2 | 3;
 
 const viewTitles: Record<View, { eyebrow: string; title: string }> = {
@@ -32,6 +34,7 @@ const viewTitles: Record<View, { eyebrow: string; title: string }> = {
   warranties: { eyebrow: "After-sales", title: "Warranty claims" },
   notifications: { eyebrow: "Customer follow-up", title: "Notification centre" },
   reports: { eyebrow: "Performance", title: "Health reports" },
+  analytics: { eyebrow: "Business intelligence", title: "Profit & reliability" },
   staff: { eyebrow: "Access control", title: "Staff accounts" },
   settings: { eyebrow: "Configuration", title: "Shop settings" },
 };
@@ -45,16 +48,18 @@ type DashboardProps = {
   initialAudit: AuditEvent[];
   initialSettings: ShopSettings;
   initialSystem: SystemReadiness | null;
+  initialAnalytics: FinanceAnalytics | null;
   session: StaffSession;
 };
 
-export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees, initialNotifications, initialStaff, initialAudit, initialSettings, initialSystem, session }: DashboardProps) {
+export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees, initialNotifications, initialStaff, initialAudit, initialSettings, initialSystem, initialAnalytics, session }: DashboardProps) {
   const [records, setRecords] = useState(initialDevices);
   const [claims, setClaims] = useState(initialClaims);
   const [notifications, setNotifications] = useState(initialNotifications);
   const [staff, setStaff] = useState(initialStaff);
   const [audit, setAudit] = useState(initialAudit);
   const [settings, setSettings] = useState(initialSettings);
+  const [analytics, setAnalytics] = useState(initialAnalytics);
   const [view, setView] = useState<View>("overview");
   const [query, setQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -202,6 +207,15 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
     setNotifications(result.notifications as NotificationItem[]);
   }
 
+  async function openAnalytics() {
+    if (!isOwner) return;
+    setView("analytics");
+    const response = await fetch("/api/analytics", { cache: "no-store" });
+    if (!response.ok) return;
+    const result = await response.json();
+    setAnalytics(result.analytics as FinanceAnalytics);
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar" aria-label="Main navigation">
@@ -217,6 +231,7 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
           <NavButton icon="C" label="Claims" active={view === "warranties"} onClick={() => setView("warranties")} />
           <NavButton icon="N" label="Notifications" active={view === "notifications"} onClick={openNotifications} />
           <NavButton icon="R" label="Reports" active={view === "reports"} onClick={() => setView("reports")} />
+          {isOwner && <NavButton icon="P" label="Analytics" active={view === "analytics"} onClick={openAnalytics} />}
           {isOwner && <NavButton icon="T" label="Staff" active={view === "staff"} onClick={() => setView("staff")} />}
           <NavButton icon="S" label="Settings" active={view === "settings"} onClick={() => setView("settings")} />
         </div>
@@ -242,9 +257,10 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
         )}
         {view === "devices" && <DeviceList devices={filteredDevices} query={query} onQuery={setQuery} onNewTest={() => setModalOpen(true)} canCreate={canTestDevices} />}
         {view === "sales" && <SalesPanel devices={records} canActivate={canActivateDeviceSales} warrantyMonths={settings.warrantyMonths} onDeviceChange={updateDevice} onAuditChange={refreshAudit} />}
-        {view === "warranties" && <Warranties records={records} claims={claims} assignees={initialClaimAssignees} currentStaffId={session.id} onClaimUpdate={(updated) => setClaims((current) => current.map((claim) => claim.id === updated.id ? updated : claim))} />}
+        {view === "warranties" && <Warranties records={records} claims={claims} assignees={initialClaimAssignees} currentStaffId={session.id} canRecordCosts={session.role === "Owner" || session.role === "Technician"} onClaimUpdate={(updated) => setClaims((current) => current.map((claim) => claim.id === updated.id ? updated : claim))} />}
         {view === "notifications" && <NotificationCenter initialNotifications={notifications} onNotificationsChange={setNotifications} />}
         {view === "reports" && <Reports records={records} />}
+        {view === "analytics" && isOwner && analytics && <AnalyticsPanel analytics={analytics} onAnalyticsChange={setAnalytics} onAuditChange={refreshAudit} />}
         {view === "staff" && isOwner && <StaffPanel staff={staff} audit={audit} currentStaffId={session.id} onStaffChange={setStaff} onAuditChange={refreshAudit} />}
         {view === "settings" && <SettingsPanel settings={settings} session={session} initialSystem={initialSystem} onSettingsChange={setSettings} onAuditChange={refreshAudit} />}
       </main>
@@ -330,7 +346,7 @@ function DeviceList({ devices, query, canCreate, onQuery, onNewTest }: { devices
 
 type ClaimQueueFilter = "Open" | "Mine" | "Overdue" | "Urgent" | "All";
 
-function Warranties({ records, claims, assignees, currentStaffId, onClaimUpdate }: { records: DeviceRecord[]; claims: WarrantyClaimSummary[]; assignees: ClaimAssignee[]; currentStaffId: string; onClaimUpdate: (claim: WarrantyClaimSummary) => void }) {
+function Warranties({ records, claims, assignees, currentStaffId, canRecordCosts, onClaimUpdate }: { records: DeviceRecord[]; claims: WarrantyClaimSummary[]; assignees: ClaimAssignee[]; currentStaffId: string; canRecordCosts: boolean; onClaimUpdate: (claim: WarrantyClaimSummary) => void }) {
   const firstClaim = claims.find((claim) => claim.status !== "Completed" && claim.status !== "Rejected") ?? claims[0];
   const [selectedId, setSelectedId] = useState(firstClaim?.id ?? "");
   const [filter, setFilter] = useState<ClaimQueueFilter>(claims.some((claim) => claim.status !== "Completed" && claim.status !== "Rejected") ? "Open" : "All");
@@ -340,6 +356,7 @@ function Warranties({ records, claims, assignees, currentStaffId, onClaimUpdate 
   const [assignedToId, setAssignedToId] = useState(firstClaim?.assignedToId ?? "");
   const [dueDate, setDueDate] = useState(firstClaim?.dueDate ?? "");
   const [internalNote, setInternalNote] = useState("");
+  const [serviceCostLkr, setServiceCostLkr] = useState(() => firstClaim ? String(firstClaim.serviceCostCents / 100) : "0");
   const [updateError, setUpdateError] = useState("");
   const [serviceSuccess, setServiceSuccess] = useState("");
   const [updating, setUpdating] = useState(false);
@@ -366,6 +383,7 @@ function Warranties({ records, claims, assignees, currentStaffId, onClaimUpdate 
     setPriority(claim.priority);
     setAssignedToId(claim.assignedToId);
     setDueDate(claim.dueDate);
+    setServiceCostLkr(String(claim.serviceCostCents / 100));
   }
 
   function chooseClaim(claim: WarrantyClaimSummary) {
@@ -423,14 +441,14 @@ function Warranties({ records, claims, assignees, currentStaffId, onClaimUpdate 
   }
 
   async function updateServicePlan() {
-    const updated = await sendClaimUpdate({ priority, assignedToId, dueDate, internalNote });
+    const updated = await sendClaimUpdate({ priority, assignedToId, dueDate, internalNote, ...(canRecordCosts ? { serviceCostLkr } : {}) });
     if (updated) {
       setInternalNote("");
       setServiceSuccess("Internal service plan saved.");
     }
   }
 
-  const serviceChanged = selected && (priority !== selected.priority || assignedToId !== selected.assignedToId || dueDate !== selected.dueDate || Boolean(internalNote.trim()));
+  const serviceChanged = selected && (priority !== selected.priority || assignedToId !== selected.assignedToId || dueDate !== selected.dueDate || (canRecordCosts && Number(serviceCostLkr || 0) !== selected.serviceCostCents / 100) || Boolean(internalNote.trim()));
 
   return (
     <section className="page-section service-desk-page">
@@ -478,6 +496,7 @@ function Warranties({ records, claims, assignees, currentStaffId, onClaimUpdate 
                   <label>Priority<select value={priority} onChange={(event) => setPriority(event.target.value as ClaimPriority)}>{claimPriorities.map((item) => <option key={item}>{item}</option>)}</select></label>
                   <label>Assigned staff<select value={assignedToId} onChange={(event) => setAssignedToId(event.target.value)}><option value="">Unassigned</option>{assignees.map((member) => <option value={member.id} key={member.id}>{member.name} · {member.role}</option>)}</select></label>
                   <label>Due date<input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></label>
+                  {canRecordCosts && <label>Warranty cost (LKR)<input type="number" min="0" max="100000000" step="0.01" inputMode="decimal" value={serviceCostLkr} onChange={(event) => setServiceCostLkr(event.target.value)} /></label>}
                   <label className="service-note-field">Internal repair note<textarea value={internalNote} onChange={(event) => setInternalNote(event.target.value)} maxLength={1200} placeholder="Diagnosis, parts required, test results or handover notes" /></label>
                 </div>
                 <button className="button primary" type="button" disabled={updating || !serviceChanged} onClick={updateServicePlan}>{updating ? "Saving…" : "Save service plan"}</button>

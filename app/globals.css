@@ -3910,6 +3910,116 @@ a {
 .job-sheet-signatures span { color: var(--muted); font-size: 8px; }
 .job-sheet-footer { margin: 28px 0 0; color: #87928c; font-size: 7px; text-align: center; }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.analytics-section-head { align-items: center; }
+.analytics-section-head p { margin: 8px 0 0; color: var(--muted); font-size: 11px; }
+.data-quality-banner {
+  display: grid;
+  grid-template-columns: 34px minmax(0,1fr) auto;
+  gap: 13px;
+  align-items: center;
+  padding: 14px 16px;
+  border: 1px solid #ecd6a9;
+  border-radius: 14px;
+  color: #654915;
+  background: #fff9ec;
+}
+.data-quality-banner > span { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 10px; color: #7d5711; background: #f8dfaa; font-weight: 900; }
+.data-quality-banner strong { display: block; font-size: 11px; }
+.data-quality-banner p { margin: 3px 0 0; color: #866e3e; font-size: 9px; line-height: 1.45; }
+.data-quality-banner em { padding: 6px 9px; border-radius: 999px; background: rgba(255,255,255,.75); font-size: 9px; font-style: normal; font-weight: 780; white-space: nowrap; }
+.analytics-kpis .stat-value { font-size: clamp(20px, 2.1vw, 27px); }
+.analytics-stat.positive { border-color: #cfe4d2; background: linear-gradient(145deg,#fff,#f4fbf2); }
+.analytics-stat.negative { border-color: #eccaca; background: #fff8f8; }
+.analytics-stat.warning .stat-indicator, .analytics-stat.negative .stat-indicator { color: #80571b; background: #fff0d5; }
+.analytics-scorecard {
+  display: grid;
+  grid-template-columns: repeat(4,minmax(0,1fr));
+  margin: 0 0 18px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--forest);
+}
+.analytics-scorecard > div { min-width: 0; padding: 17px 19px; border-right: 1px solid rgba(255,255,255,.1); }
+.analytics-scorecard > div:last-child { border-right: 0; }
+.analytics-scorecard span, .analytics-scorecard small { display: block; color: rgba(239,248,241,.58); font-size: 9px; }
+.analytics-scorecard strong { display: block; margin: 5px 0 4px; color: #fff; font-size: 22px; letter-spacing: -.035em; }
+.analytics-scorecard small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.analytics-grid { display: grid; grid-template-columns: minmax(0,1.55fr) minmax(280px,.75fr); gap: 18px; margin-bottom: 18px; }
+.analytics-chart-card, .profit-leaders, .reliability-card, .cost-book-card, .technician-card { overflow: hidden; }
+.chart-legend { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 8px; }
+.chart-legend i { width: 8px; height: 8px; margin-left: 5px; border-radius: 2px; background: var(--forest-2); }
+.chart-legend i:last-of-type { background: var(--lime); box-shadow: inset 0 0 0 1px rgba(18,60,46,.15); }
+.finance-chart { display: grid; height: 245px; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 12px; align-items: end; padding: 26px 22px 20px; background: linear-gradient(to top,rgba(227,232,225,.58) 1px,transparent 1px); background-size: 100% 25%; }
+.finance-chart-month { display: grid; min-width: 0; gap: 4px; justify-items: center; }
+.finance-chart-month strong { font-size: 9px; }
+.finance-chart-month small { color: var(--muted); font-size: 8px; }
+.finance-chart-bars { display: flex; width: 100%; height: 170px; align-items: flex-end; justify-content: center; gap: 4px; }
+.finance-chart-bars span { width: min(17px,40%); min-height: 0; border-radius: 5px 5px 2px 2px; background: var(--forest-2); transition: height .35s ease; }
+.finance-chart-bars .profit-bar { background: var(--lime); box-shadow: inset 0 0 0 1px rgba(18,60,46,.12); }
+.finance-chart-bars .profit-bar.negative { background: #ee8e8e; }
+.profit-leader-list { padding: 8px 18px 16px; }
+.profit-leader-list > div { display: grid; grid-template-columns: 25px minmax(0,1fr) auto; gap: 9px; align-items: center; padding: 12px 0; border-bottom: 1px solid #edf0ec; }
+.profit-leader-list > div:last-child { border-bottom: 0; }
+.profit-leader-list > div > span { display: grid; width: 25px; height: 25px; place-items: center; border-radius: 8px; color: var(--forest-2); background: var(--lime-soft); font-size: 9px; font-weight: 850; }
+.profit-leader-list p { min-width: 0; margin: 0; }
+.profit-leader-list strong, .profit-leader-list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profit-leader-list strong { font-size: 10px; }
+.profit-leader-list small { margin-top: 2px; color: var(--muted); font-size: 8px; }
+.profit-leader-list b { color: var(--forest-2); font-size: 10px; white-space: nowrap; }
+.mini-empty { display: block !important; padding: 42px 10px !important; color: var(--muted); text-align: center; font-size: 10px; }
+.reliability-card, .cost-book-card, .technician-card { margin-top: 18px; }
+.analytics-table { width: 100%; border-collapse: collapse; text-align: left; }
+.analytics-table th { padding: 11px 16px; color: #87918c; background: #fafbf8; font-size: 8px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+.analytics-table td { padding: 13px 16px; border-top: 1px solid #edf0ec; font-size: 10px; white-space: nowrap; }
+.analytics-table td:first-child { min-width: 170px; white-space: normal; }
+.analytics-table td > strong, .analytics-table td > span { display: block; }
+.analytics-table td > span { margin-top: 3px; color: var(--muted); font-size: 8px; }
+.failure-chip { display: inline-flex !important; width: fit-content; margin: 0 !important; padding: 5px 7px; border-radius: 999px; color: #2b6d4d !important; background: #eaf8ee; font-weight: 800; }
+.failure-chip.high { color: #a14141 !important; background: #ffeded; }
+.cost-book-head .search { min-width: 260px; min-height: 36px; }
+.cost-book-table td { vertical-align: middle; }
+.cost-book-table td:first-child { min-width: 215px; }
+.cost-book-table td:last-child { text-align: right; }
+.money-input { position: relative; display: block; width: 116px; }
+.money-input i { position: absolute; top: 50%; left: 8px; transform: translateY(-50%); color: var(--muted); font-size: 8px; font-style: normal; }
+.money-input input { width: 100%; height: 34px; padding: 0 7px 0 27px; border: 1px solid var(--line); border-radius: 8px; outline: none; font-size: 9px; }
+.money-input input:focus { border-color: #89a896; box-shadow: 0 0 0 3px rgba(28,92,71,.08); }
+.missing-money { display: inline-flex !important; width: fit-content; margin: 0 !important; padding: 4px 7px; border-radius: 7px; color: #91621f !important; background: #fff1d8; font-weight: 750; }
+.positive-money { color: var(--forest-2); }
+.negative-money { color: #bd4b4b !important; }
+.not-sold { margin: 0 !important; }
+.cost-row-actions { display: flex !important; align-items: center; justify-content: flex-end; gap: 6px; margin: 0 !important; }
+.cost-row-actions .text-link { padding: 6px; }
+.inline-finance-error { margin: 12px 16px 0; }
+.technician-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(250px,1fr)); gap: 12px; padding: 17px; }
+.technician-grid article { padding: 15px; border: 1px solid var(--line); border-radius: 13px; background: #fbfcfa; }
+.technician-grid article > div { display: flex; align-items: center; gap: 10px; }
+.technician-avatar { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; color: #eff8f1; background: var(--forest); font-size: 10px; font-weight: 850; }
+.technician-grid p { margin: 0; }
+.technician-grid p strong, .technician-grid p small { display: block; }
+.technician-grid p strong { font-size: 11px; }
+.technician-grid p small { margin-top: 2px; color: var(--muted); font-size: 8px; }
+.technician-grid dl { display: grid; grid-template-columns: repeat(4,1fr); gap: 7px; margin: 14px 0 0; }
+.technician-grid dl div { padding: 8px; border-radius: 8px; background: #f0f4ef; }
+.technician-grid dt { color: var(--muted); font-size: 7px; text-transform: uppercase; }
+.technician-grid dd { margin: 4px 0 0; font-size: 13px; font-weight: 800; }
+.analytics-loading { display: flex; min-height: 320px; align-items: center; justify-content: center; gap: 12px; color: var(--muted); }
+.analytics-loading span { width: 18px; height: 18px; border: 2px solid var(--line); border-top-color: var(--forest-2); border-radius: 50%; animation: analytics-spin .7s linear infinite; }
+.analytics-loading strong { font-size: 11px; }
+@keyframes analytics-spin { to { transform: rotate(360deg); } }
+
 @media (max-width: 1060px) {
   .app-shell { grid-template-columns: 82px minmax(0,1fr); }
   .sidebar { padding-inline: 12px; }
@@ -3922,6 +4032,7 @@ a {
   .notification-workspace { grid-template-columns: 1fr; }
   .staff-layout, .settings-layout { grid-template-columns: 1fr; }
   .sales-workspace, .digital-warranty-body { grid-template-columns: 1fr; }
+  .analytics-grid { grid-template-columns: 1fr; }
   .warranty-qr-panel { border-top: 1px solid var(--line); border-left: 0; }
   .claim-list { max-height: 360px; }
   .notification-list { max-height: 390px; }
@@ -3942,7 +4053,7 @@ a {
     border-radius: 18px 18px 0 0;
   }
   .brand, .nav-label, .sidebar-account, .nav-stack.secondary { display: none; }
-  .nav-stack { grid-template-columns: repeat(auto-fit, minmax(44px,1fr)); }
+  .nav-stack { grid-template-columns: repeat(auto-fit, minmax(36px,1fr)); }
   .nav-item { display: grid; gap: 2px; justify-items: center; font-size: 8px; }
   .nav-item span:not(.nav-icon) { display: block; }
   .nav-icon { width: 24px; height: 24px; border: 0; }
@@ -3953,10 +4064,17 @@ a {
   .hero { margin-top: 18px; padding: 25px 22px; border-radius: 20px; }
   .hero-actions { align-items: stretch; flex-direction: column; }
   .stats { grid-template-columns: repeat(2,1fr); }
+  .analytics-scorecard { grid-template-columns: repeat(2,1fr); }
+  .analytics-scorecard > div:nth-child(2) { border-right: 0; }
+  .analytics-scorecard > div:nth-child(-n+2) { border-bottom: 1px solid rgba(255,255,255,.1); }
   .stat-card { padding: 16px; }
   .content-grid { gap: 14px; }
   .section-head { align-items: stretch; flex-direction: column; }
   .search { min-width: 100%; }
+  .data-quality-banner { grid-template-columns: 34px 1fr; }
+  .data-quality-banner em { grid-column: 2; justify-self: start; }
+  .cost-book-head { align-items: stretch; flex-direction: column; padding-block: 15px; }
+  .cost-book-head .search { min-width: 100%; }
   .device-table th:nth-child(3), .device-table td:nth-child(3),
   .device-table th:nth-child(4), .device-table td:nth-child(4) { display: none; }
   .passport-nav .verified-chip { display: none; }

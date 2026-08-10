@@ -20,4 +20,5 @@ export type SaleActivationInput = {
   customerPhone: string;
   invoiceReference: string;
   soldAt: string;
+  salePriceLkr: string;
 };

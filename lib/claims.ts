@@ -42,6 +42,7 @@ export type WarrantyClaimSummary = {
   createdAt: string;
   updatedAt: string;
   photoCount: number;
+  serviceCostCents: number;
   internalNotes: ClaimInternalNote[];
 };
 
@@ -73,9 +74,10 @@ export type WarrantyClaimUpdate = {
   assignedToId?: string;
   dueDate?: string;
   internalNote?: string;
+  serviceCostCents?: number;
 };
 
-export type PublicWarrantyClaim = Omit<WarrantyClaimSummary, "trackingToken" | "customerEmail" | "customerPhone" | "priority" | "assignedToId" | "assignedToName" | "dueDate" | "internalNotes"> & {
+export type PublicWarrantyClaim = Omit<WarrantyClaimSummary, "trackingToken" | "customerEmail" | "customerPhone" | "priority" | "assignedToId" | "assignedToName" | "dueDate" | "serviceCostCents" | "internalNotes"> & {
   photos: Array<{ id: string; name: string; mimeType: string }>;
   events: ClaimEvent[];
 };

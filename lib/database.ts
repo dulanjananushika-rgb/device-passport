@@ -33,6 +33,7 @@ import {
   type StaffRole,
 } from "./operations";
 import type { DeviceSale, SaleActivationInput } from "./sales";
+import { parseLkrToCents } from "./finance";
 
 type DeviceRow = {
   id: string;
@@ -110,6 +111,7 @@ type ClaimRow = {
   created_at: string;
   updated_at: string;
   photo_count: number;
+  service_cost_cents: number;
 };
 
 type ClaimInternalNoteRow = {
@@ -184,6 +186,7 @@ function ensureClaimSchema(database: DatabaseSync) {
       category TEXT NOT NULL,
       description TEXT NOT NULL,
       status TEXT NOT NULL,
+      service_cost_cents INTEGER NOT NULL DEFAULT 0,
       warranty_valid INTEGER NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -216,6 +219,7 @@ function ensureClaimSchema(database: DatabaseSync) {
   if (!columns.has("priority")) database.exec("ALTER TABLE warranty_claims ADD COLUMN priority TEXT NOT NULL DEFAULT 'Normal'");
   if (!columns.has("assigned_to_id")) database.exec("ALTER TABLE warranty_claims ADD COLUMN assigned_to_id TEXT");
   if (!columns.has("due_date")) database.exec("ALTER TABLE warranty_claims ADD COLUMN due_date TEXT NOT NULL DEFAULT ''");
+  if (!columns.has("service_cost_cents")) database.exec("ALTER TABLE warranty_claims ADD COLUMN service_cost_cents INTEGER NOT NULL DEFAULT 0");
   database.exec(`
     CREATE TABLE IF NOT EXISTS claim_internal_notes (
       id TEXT PRIMARY KEY,
@@ -269,6 +273,7 @@ function ensureOperationsSchema(database: DatabaseSync) {
       customer_email TEXT NOT NULL DEFAULT '',
       customer_phone TEXT NOT NULL DEFAULT '',
       invoice_reference TEXT NOT NULL UNIQUE,
+      sale_price_cents INTEGER NOT NULL DEFAULT 0,
       sold_at TEXT NOT NULL,
       warranty_starts TEXT NOT NULL,
       warranty_ends TEXT NOT NULL,
@@ -287,6 +292,9 @@ function ensureOperationsSchema(database: DatabaseSync) {
     CREATE INDEX IF NOT EXISTS idx_device_sales_customer_email ON device_sales(customer_email);
     CREATE INDEX IF NOT EXISTS idx_device_sales_warranty_ends ON device_sales(warranty_ends);
   `);
+
+  const saleColumns = new Set((database.prepare("PRAGMA table_info(device_sales)").all() as Array<{ name: string }>).map((column) => column.name));
+  if (!saleColumns.has("sale_price_cents")) database.exec("ALTER TABLE device_sales ADD COLUMN sale_price_cents INTEGER NOT NULL DEFAULT 0");
 
   const now = new Date().toISOString();
   database.prepare(`
@@ -308,6 +316,20 @@ function ensureOperationsSchema(database: DatabaseSync) {
       `).run(randomUUID(), email, hashPassword(password), now, now);
     }
   }
+}
+
+function ensureFinanceSchema(database: DatabaseSync) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS device_finance (
+      device_id TEXT PRIMARY KEY,
+      purchase_cost_cents INTEGER NOT NULL DEFAULT 0 CHECK (purchase_cost_cents >= 0),
+      refurbishment_cost_cents INTEGER NOT NULL DEFAULT 0 CHECK (refurbishment_cost_cents >= 0),
+      updated_by TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_device_finance_updated ON device_finance(updated_at);
+  `);
 }
 
 function backfillExistingSales(database: DatabaseSync) {
@@ -382,6 +404,7 @@ export function getDatabase() {
   if (globalDatabase.devicePassportDb) {
     ensureClaimSchema(globalDatabase.devicePassportDb);
     ensureOperationsSchema(globalDatabase.devicePassportDb);
+    ensureFinanceSchema(globalDatabase.devicePassportDb);
     backfillExistingSales(globalDatabase.devicePassportDb);
     correctLegacySaleDates(globalDatabase.devicePassportDb);
     return globalDatabase.devicePassportDb;
@@ -441,6 +464,7 @@ export function getDatabase() {
   `);
   ensureClaimSchema(database);
   ensureOperationsSchema(database);
+  ensureFinanceSchema(database);
 
   const insert = database.prepare(`
     INSERT OR IGNORE INTO devices (
@@ -741,6 +765,7 @@ export function activateDeviceSale(deviceId: string, input: SaleActivationInput,
   const customerPhone = input.customerPhone?.trim() ?? "";
   const invoiceReference = input.invoiceReference?.trim();
   const soldAt = input.soldAt?.trim();
+  const salePriceCents = parseLkrToCents(input.salePriceLkr, "Sale price", false);
 
   if (!customerName || customerName.length < 2 || customerName.length > 100) throw new Error("Customer name must contain 2 to 100 characters.");
   if (!customerEmail && !customerPhone) throw new Error("Enter the customer's email address or phone number.");
@@ -774,15 +799,16 @@ export function activateDeviceSale(deviceId: string, input: SaleActivationInput,
   try {
     database.prepare(`
       INSERT INTO device_sales (
-        device_id, customer_name, customer_email, customer_phone, invoice_reference,
+        device_id, customer_name, customer_email, customer_phone, invoice_reference, sale_price_cents,
         sold_at, warranty_starts, warranty_ends, handover_token, activated_by, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       device.id,
       customerName,
       customerEmail,
       customerPhone,
       invoiceReference,
+      salePriceCents,
       soldAt,
       soldAt,
       toIsoDate(warrantyEnd),
@@ -861,14 +887,18 @@ function rowToClaimSummary(row: ClaimRow, database = getDatabase()): WarrantyCla
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     photoCount: row.photo_count,
+    serviceCostCents: row.service_cost_cents,
     internalNotes: listClaimInternalNotes(database, row.id),
   };
 }
 
-export function listWarrantyClaims(): WarrantyClaimSummary[] {
+export function listWarrantyClaims(includeServiceCosts = true): WarrantyClaimSummary[] {
   const database = getDatabase();
   const rows = database.prepare(`${claimSummarySql} ORDER BY c.updated_at DESC, c.id DESC`).all() as unknown as ClaimRow[];
-  return rows.map((row) => rowToClaimSummary(row, database));
+  return rows.map((row) => {
+    const claim = rowToClaimSummary(row, database);
+    return includeServiceCosts ? claim : { ...claim, serviceCostCents: 0 };
+  });
 }
 
 export function findWarrantyClaimById(id: string): WarrantyClaimSummary | null {
@@ -948,6 +978,7 @@ export function findPublicClaim(trackingToken: string): PublicWarrantyClaim | nu
     assignedToId: _assignedToId,
     assignedToName: _assignedToName,
     dueDate: _dueDate,
+    serviceCostCents: _serviceCostCents,
     internalNotes: _internalNotes,
     ...publicSummary
   } = summary;
@@ -958,6 +989,7 @@ export function findPublicClaim(trackingToken: string): PublicWarrantyClaim | nu
   void _assignedToId;
   void _assignedToName;
   void _dueDate;
+  void _serviceCostCents;
   void _internalNotes;
   const events: ClaimEvent[] = eventRows.map((event) => ({
     id: event.id,
@@ -985,11 +1017,12 @@ export function getClaimPhoto(trackingToken: string, photoId: string) {
 
 export function updateWarrantyClaim(claimId: string, input: WarrantyClaimUpdate, actor: string): WarrantyClaimSummary {
   const database = getDatabase();
-  const current = database.prepare("SELECT status, priority, assigned_to_id, due_date FROM warranty_claims WHERE id = ?").get(claimId) as {
+  const current = database.prepare("SELECT status, priority, assigned_to_id, due_date, service_cost_cents FROM warranty_claims WHERE id = ?").get(claimId) as {
     status: ClaimStatus;
     priority: ClaimPriority;
     assigned_to_id: string | null;
     due_date: string;
+    service_cost_cents: number;
   } | undefined;
   if (!current) throw new Error("Warranty claim not found.");
   if (input.status !== undefined && !isClaimStatus(input.status)) throw new Error("Choose a valid claim status.");
@@ -1013,15 +1046,17 @@ export function updateWarrantyClaim(claimId: string, input: WarrantyClaimUpdate,
   if (publicNote.length > 600) throw new Error("Customer updates must be 600 characters or fewer.");
   const internalNote = input.internalNote?.trim() ?? "";
   if (internalNote.length > 1200) throw new Error("Internal notes must be 1200 characters or fewer.");
+  const serviceCostCents = input.serviceCostCents ?? current.service_cost_cents;
+  if (!Number.isSafeInteger(serviceCostCents) || serviceCostCents < 0 || serviceCostCents > 10_000_000_000) throw new Error("Warranty service cost is outside the allowed range.");
   const statusChanged = nextStatus !== current.status;
-  const serviceChanged = priority !== current.priority || assignedToId !== (current.assigned_to_id ?? "") || dueDate !== current.due_date;
+  const serviceChanged = priority !== current.priority || assignedToId !== (current.assigned_to_id ?? "") || dueDate !== current.due_date || serviceCostCents !== current.service_cost_cents;
   if (!statusChanged && !serviceChanged && !publicNote && !internalNote) throw new Error("Make a service change or add a note before saving.");
   const now = new Date().toISOString();
 
   database.exec("BEGIN");
   try {
-    database.prepare("UPDATE warranty_claims SET status = ?, priority = ?, assigned_to_id = ?, due_date = ?, updated_at = ? WHERE id = ?")
-      .run(nextStatus, priority, assignedToId || null, dueDate, now, claimId);
+    database.prepare("UPDATE warranty_claims SET status = ?, priority = ?, assigned_to_id = ?, due_date = ?, service_cost_cents = ?, updated_at = ? WHERE id = ?")
+      .run(nextStatus, priority, assignedToId || null, dueDate, serviceCostCents, now, claimId);
     if (statusChanged || publicNote) {
       database.prepare("INSERT INTO claim_events (id, claim_id, status, note, actor, created_at) VALUES (?, ?, ?, ?, ?, ?)")
         .run(randomUUID(), claimId, nextStatus, publicNote || defaultStatusNote(nextStatus), actor, now);

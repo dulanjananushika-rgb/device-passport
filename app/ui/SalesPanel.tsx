@@ -18,6 +18,7 @@ type ActivationForm = {
   customerPhone: string;
   invoiceReference: string;
   soldAt: string;
+  salePriceLkr: string;
 };
 
 export function SalesPanel({ devices, canActivate, warrantyMonths, onDeviceChange, onAuditChange }: SalesPanelProps) {
@@ -136,7 +137,8 @@ export function SalesPanel({ devices, canActivate, warrantyMonths, onDeviceChang
                 <label>Invoice reference<input required minLength={2} maxLength={80} value={form.invoiceReference} onChange={(event) => change("invoiceReference", event.target.value)} placeholder="INV-2026-001" /></label>
                 <label>Email address<input type="email" value={form.customerEmail} onChange={(event) => change("customerEmail", event.target.value)} placeholder="buyer@example.com" /></label>
                 <label>Phone number<input type="tel" maxLength={30} value={form.customerPhone} onChange={(event) => change("customerPhone", event.target.value)} placeholder="+94 77 123 4567" /></label>
-                <label className="full-field">Sale date<input type="date" max={today} required value={form.soldAt} onChange={(event) => change("soldAt", event.target.value)} /></label>
+                <label>Sale price (LKR)<input type="number" min="0.01" max="100000000" step="0.01" inputMode="decimal" required value={form.salePriceLkr} onChange={(event) => change("salePriceLkr", event.target.value)} placeholder="185000" /></label>
+                <label>Sale date<input type="date" max={today} required value={form.soldAt} onChange={(event) => change("soldAt", event.target.value)} /></label>
               </div>
               <div className="activation-note"><strong>Warranty starts on the sale date.</strong><span>The customer receives a secure QR warranty card and claim link.</span></div>
               {error && <div className="error-box" role="alert">{error}</div>}
@@ -170,7 +172,7 @@ function SaleStat({ label, value, note }: { label: string; value: number; note: 
 }
 
 function emptyActivation(today: string): ActivationForm {
-  return { customerName: "", customerEmail: "", customerPhone: "", invoiceReference: "", soldAt: today };
+  return { customerName: "", customerEmail: "", customerPhone: "", invoiceReference: "", soldAt: today, salePriceLkr: "" };
 }
 
 function formatSaleDate(value: string) {

@@ -25,6 +25,7 @@ export async function POST(request: Request, { params }: RouteContext) {
       customerPhone: typeof payload.customerPhone === "string" ? payload.customerPhone : "",
       invoiceReference: typeof payload.invoiceReference === "string" ? payload.invoiceReference : "",
       soldAt: typeof payload.soldAt === "string" ? payload.soldAt : "",
+      salePriceLkr: typeof payload.salePriceLkr === "string" || typeof payload.salePriceLkr === "number" ? String(payload.salePriceLkr) : "",
     }, session.email);
     return NextResponse.json({ device }, { status: 201 });
   } catch (error) {
