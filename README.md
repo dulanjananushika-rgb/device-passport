@@ -19,6 +19,8 @@ DevicePassport is an independent shop system for refurbished laptop health repor
 - Private customer tracking links and a technician status timeline
 - Authenticated claims inbox for shop staff
 - Warranty service desk with assignment, priority, due-date/SLA filters, private repair notes, and printable job sheets
+- Notification centre for new claims, overdue SLAs, Ready stock, and 30/7-day warranty reminders
+- Click-to-send WhatsApp/email templates with composer-open and completion history
 - Configurable shop branding, contact details, warranty defaults, and logo
 - Staff account management, password changes, and audit history
 - Automatic daily SQLite snapshots with 14-day retention
@@ -97,6 +99,16 @@ Use **Settings** to update the shop identity and your own password. Use **Staff*
 3. Record diagnosis, parts, tests, and handover details as private internal notes. These notes are never included in the customer tracker.
 4. Print the authenticated A4 job sheet for the repair bench and final customer signature.
 5. Publish only the chosen status and customer-facing note to the private tracker.
+
+## Notification centre
+
+1. The authenticated dashboard derives alerts from live claims, service due dates, Ready stock, and warranty expiry dates.
+2. Open **Notifications** to filter active, contactable, historical, or all alerts.
+3. Review the prepared customer-safe message, then open WhatsApp or email when that contact method is available.
+4. Opening a composer is recorded in the notification and audit history, but is not treated as delivery confirmation.
+5. After the staff member confirms that the message was sent, mark the alert **Done**. Alerts can also be dismissed or reopened.
+
+The standalone build does not send messages in the background. Connecting an email provider or WhatsApp Business API is a later opt-in deployment step.
 
 ## Backups and recovery
 

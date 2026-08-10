@@ -8,6 +8,7 @@ const staffEmail = `smoke-${runId}@example.com`;
 const temporaryPassword = "SmokePass!234";
 const changedPassword = "SmokePass!567";
 const invoiceReference = `SMOKE-INV-${runId}`;
+const restoreTestIp = `198.51.100.${(runId % 200) + 1}`;
 const tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 let createdDeviceId = "";
 let createdClaimId = "";
@@ -40,6 +41,9 @@ try {
   const settingsResponse = await expectOk(await fetch(`${baseUrl}/api/settings`, { headers: { cookie } }), "Shop settings");
   const { settings } = await settingsResponse.json();
   if (!settings.shopName || !settings.warrantyMonths) throw new Error("Shop settings were not returned.");
+  const warrantyReminderTarget = new Date(Date.now() + 10 * 86_400_000);
+  warrantyReminderTarget.setUTCMonth(warrantyReminderTarget.getUTCMonth() - settings.warrantyMonths);
+  const saleDateForReminder = warrantyReminderTarget.toISOString().slice(0, 10);
   const systemResponse = await expectOk(await fetch(`${baseUrl}/api/system`, { headers: { cookie } }), "System readiness");
   const { system } = await systemResponse.json();
   if (!system.checks.some((check) => check.key === "database" && check.ok)) throw new Error("System readiness did not validate the database.");
@@ -93,10 +97,15 @@ try {
   createdDeviceId = device.id;
   if (device.lifecycleStatus !== "Ready" || device.sale || device.warrantyEnds) throw new Error("A new verified passport did not enter the Ready lifecycle state.");
 
+  const readyNotifications = await expectOk(await fetch(`${baseUrl}/api/notifications`, { headers: { cookie } }), "Ready-stock notifications");
+  const readyNotificationPayload = await readyNotifications.json();
+  const readyNotification = readyNotificationPayload.notifications.find((item) => item.entityId === device.id && item.type === "ReadyDevice");
+  if (!readyNotification || readyNotification.status !== "Pending") throw new Error("Ready stock did not create an internal notification.");
+
   const forbiddenActivation = await fetch(`${baseUrl}/api/devices/${device.id}/activate`, {
     method: "POST",
     headers: { "content-type": "application/json", cookie: changedStaffCookie },
-    body: JSON.stringify({ customerName: "Smoke Test Customer", customerPhone: "+94 77 000 0000", customerEmail: "", invoiceReference, soldAt: new Date().toISOString().slice(0, 10) }),
+    body: JSON.stringify({ customerName: "Smoke Test Customer", customerPhone: "+94 77 000 0000", customerEmail: "", invoiceReference, soldAt: saleDateForReminder }),
   });
   if (forbiddenActivation.status !== 403) throw new Error(`Support sale activation permission expected 403, received ${forbiddenActivation.status}.`);
 
@@ -121,16 +130,22 @@ try {
       customerEmail: "smoke@example.com",
       customerPhone: "+94 77 000 0000",
       invoiceReference,
-      soldAt: new Date().toISOString().slice(0, 10),
+      soldAt: saleDateForReminder,
     }),
   }), "Sale activation");
   const { device: activatedDevice } = await activation.json();
   if (activatedDevice.lifecycleStatus !== "Sold" || !activatedDevice.sale?.handoverToken || !activatedDevice.sale?.warrantyEnds) throw new Error("The sale did not activate a customer warranty.");
 
+  const saleNotifications = await expectOk(await fetch(`${baseUrl}/api/notifications`, { headers: { cookie } }), "Warranty reminder notifications");
+  const saleNotificationPayload = await saleNotifications.json();
+  const resolvedReadyNotification = saleNotificationPayload.notifications.find((item) => item.id === readyNotification.id);
+  const warrantyNotification = saleNotificationPayload.notifications.find((item) => item.entityId === device.id && (item.type === "Warranty30" || item.type === "Warranty7"));
+  if (resolvedReadyNotification?.status !== "Resolved" || !warrantyNotification || warrantyNotification.status !== "Pending") throw new Error("Sale activation did not resolve Ready stock and create a warranty reminder.");
+
   const duplicateActivation = await fetch(`${baseUrl}/api/devices/${device.id}/activate`, {
     method: "POST",
     headers: { "content-type": "application/json", cookie },
-    body: JSON.stringify({ customerName: "Duplicate Customer", customerPhone: "+94 77 111 1111", customerEmail: "", invoiceReference: `${invoiceReference}-DUP`, soldAt: new Date().toISOString().slice(0, 10) }),
+    body: JSON.stringify({ customerName: "Duplicate Customer", customerPhone: "+94 77 111 1111", customerEmail: "", invoiceReference: `${invoiceReference}-DUP`, soldAt: saleDateForReminder }),
   });
   if (duplicateActivation.status !== 400) throw new Error(`Duplicate sale activation expected 400, received ${duplicateActivation.status}.`);
 
@@ -158,6 +173,33 @@ try {
   }), "Claim submission");
   const { claim } = await claimSubmission.json();
   createdClaimId = claim.id;
+
+  const claimNotifications = await expectOk(await fetch(`${baseUrl}/api/notifications`, { headers: { cookie } }), "New-claim notifications");
+  const claimNotificationPayload = await claimNotifications.json();
+  const claimNotification = claimNotificationPayload.notifications.find((item) => item.entityId === claim.id && item.type === "NewClaim");
+  if (!claimNotification || claimNotification.status !== "Pending" || !claimNotification.message.includes(claim.trackingToken)) throw new Error("The new claim notification or customer template was not created.");
+  const emailComposer = await expectOk(await fetch(`${baseUrl}/api/notifications/${claimNotification.id}/open`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ channel: "Email" }),
+  }), "Notification email composer");
+  const emailComposerPayload = await emailComposer.json();
+  if (!emailComposerPayload.href.startsWith("mailto:smoke%40example.com") || emailComposerPayload.notification.status !== "Opened" || !emailComposerPayload.notification.actions.some((action) => action.action === "Composer opened" && action.channel === "Email")) throw new Error("The email composer action was not prepared and logged.");
+  const missingWhatsApp = await fetch(`${baseUrl}/api/notifications/${claimNotification.id}/open`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ channel: "WhatsApp" }),
+  });
+  if (missingWhatsApp.status !== 400) throw new Error(`Missing WhatsApp contact expected 400, received ${missingWhatsApp.status}.`);
+  const notificationDone = await expectOk(await fetch(`${baseUrl}/api/notifications/${claimNotification.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ status: "Done" }),
+  }), "Notification completion");
+  const notificationDonePayload = await notificationDone.json();
+  if (notificationDonePayload.notification.status !== "Done" || !notificationDonePayload.notification.actions.some((action) => action.action === "Marked done")) throw new Error("Notification completion was not logged.");
+  const unauthenticatedNotifications = await fetch(`${baseUrl}/api/notifications`);
+  if (unauthenticatedNotifications.status !== 401) throw new Error(`Unauthenticated notification inbox expected 401, received ${unauthenticatedNotifications.status}.`);
   const tracker = await expectOk(await fetch(`${baseUrl}/claim/${claim.trackingToken}`), "Private claim tracker");
   const trackerHtml = await tracker.text();
   if (!trackerHtml.includes(claim.id) || !trackerHtml.includes("Warranty claim received")) throw new Error("The claim tracker did not render the new claim.");
@@ -206,14 +248,14 @@ try {
 
   const unconfirmedRestore = await fetch(`${baseUrl}/api/backups/restore`, {
     method: "POST",
-    headers: { "content-type": "application/json", cookie },
+    headers: { "content-type": "application/json", cookie, "x-forwarded-for": restoreTestIp },
     body: JSON.stringify({ name: backup.name, confirmation: "restore", password: "devicepass" }),
   });
   if (unconfirmedRestore.status !== 400) throw new Error(`Unconfirmed restore expected 400, received ${unconfirmedRestore.status}.`);
 
   const restoreResponse = await expectOk(await fetch(`${baseUrl}/api/backups/restore`, {
     method: "POST",
-    headers: { "content-type": "application/json", cookie },
+    headers: { "content-type": "application/json", cookie, "x-forwarded-for": restoreTestIp },
     body: JSON.stringify({ name: backup.name, confirmation: "RESTORE", password: "devicepass" }),
   }), "Verified database restore");
   const { result: restoreResult } = await restoreResponse.json();
@@ -242,6 +284,13 @@ try {
     warrantyCard: warrantyCard.status,
     sales: salesResponse.status,
     claim: claimSubmission.status,
+    readyNotifications: readyNotifications.status,
+    warrantyNotifications: saleNotifications.status,
+    claimNotifications: claimNotifications.status,
+    emailComposer: emailComposer.status,
+    missingWhatsApp: missingWhatsApp.status,
+    notificationDone: notificationDone.status,
+    notificationsProtected: unauthenticatedNotifications.status,
     tracker: tracker.status,
     claimPhoto: claimPhoto.status,
     inbox: claimsInbox.status,
@@ -273,6 +322,7 @@ try {
   database.exec("PRAGMA foreign_keys = ON");
   const deviceResult = database.prepare("DELETE FROM devices WHERE serial = ?").run(serial);
   const staffResult = database.prepare("DELETE FROM staff_users WHERE email = ?").run(staffEmail);
+  const notificationResult = database.prepare("DELETE FROM notification_queue WHERE entity_id = ? OR entity_id = ?").run(createdDeviceId, createdClaimId);
   const auditResult = database.prepare(`
     DELETE FROM audit_events
     WHERE actor = ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ?
@@ -282,5 +332,5 @@ try {
   for (const backupName of createdBackupNames) backupAuditChanges += Number(backupAudit.run(`%${backupName}%`).changes);
   database.close();
   for (const backupName of createdBackupNames) await rm(new URL(`../.data/backups/${backupName}`, import.meta.url), { force: true });
-  console.log(`Cleaned smoke-test data: ${deviceResult.changes} device, ${staffResult.changes} staff, ${Number(auditResult.changes) + backupAuditChanges} audit events, ${createdBackupNames.length} backups`);
+  console.log(`Cleaned smoke-test data: ${deviceResult.changes} device, ${staffResult.changes} staff, ${notificationResult.changes} notifications, ${Number(auditResult.changes) + backupAuditChanges} audit events, ${createdBackupNames.length} backups`);
 }

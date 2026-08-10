@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "../lib/auth";
 import { ensureDailyBackup } from "../lib/backups";
 import { getShopSettings, listAuditEvents, listClaimAssignees, listDevices, listStaffAccounts, listWarrantyClaims } from "../lib/database";
+import { listNotifications } from "../lib/notification-store";
 import { getSystemReadiness } from "../lib/readiness";
 import { Dashboard } from "./ui/Dashboard";
 
@@ -25,6 +26,7 @@ export default async function Home() {
       initialDevices={listDevices()}
       initialClaims={listWarrantyClaims()}
       initialClaimAssignees={listClaimAssignees()}
+      initialNotifications={listNotifications()}
       initialStaff={ownerData ? listStaffAccounts() : []}
       initialAudit={ownerData ? listAuditEvents() : []}
       initialSettings={getShopSettings()}

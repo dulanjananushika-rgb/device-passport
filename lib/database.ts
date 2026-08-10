@@ -378,7 +378,7 @@ function correctLegacySaleDates(database: DatabaseSync) {
   }
 }
 
-function getDatabase() {
+export function getDatabase() {
   if (globalDatabase.devicePassportDb) {
     ensureClaimSchema(globalDatabase.devicePassportDb);
     ensureOperationsSchema(globalDatabase.devicePassportDb);

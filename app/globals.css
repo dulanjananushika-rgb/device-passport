@@ -267,6 +267,23 @@ a {
   background: var(--amber);
 }
 
+.icon-button > small {
+  position: absolute;
+  top: -5px;
+  right: -6px;
+  display: grid;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  place-items: center;
+  border: 2px solid #f7f8f3;
+  border-radius: 999px;
+  color: white;
+  background: #bc5b36;
+  font-size: 7px;
+  font-weight: 900;
+}
+
 .button {
   display: inline-flex;
   min-height: 42px;
@@ -3628,6 +3645,190 @@ a {
 .danger-button { justify-content: center; color: white; border-color: #bd4b4b; background: #bd4b4b; }
 .danger-button:hover { background: #a63d3d; }
 
+/* Phase 8 notification centre workspace. */
+.notification-workspace {
+  display: grid;
+  grid-template-columns: minmax(280px, .78fr) minmax(0, 1.22fr);
+  gap: 16px;
+}
+
+.notification-inbox,
+.notification-detail { overflow: hidden; }
+
+.notification-filters {
+  display: flex;
+  gap: 5px;
+  padding: 0 17px 13px;
+  overflow-x: auto;
+}
+
+.notification-filters button {
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: white;
+  font: inherit;
+  font-size: 8px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.notification-filters button:hover,
+.notification-filters button.active {
+  color: var(--forest);
+  border-color: #bbd1ad;
+  background: #f1f7e9;
+}
+
+.notification-list {
+  display: grid;
+  max-height: 690px;
+  overflow-y: auto;
+}
+
+.notification-list-item {
+  display: grid;
+  width: 100%;
+  gap: 5px;
+  padding: 15px 18px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  color: inherit;
+  background: white;
+  text-align: left;
+}
+
+.notification-list-item:hover,
+.notification-list-item.selected { background: #f5f9f1; }
+.notification-list-item.selected { box-shadow: inset 3px 0 0 var(--forest-2); }
+.notification-list-item > strong { margin-top: 2px; font-size: 10px; line-height: 1.35; }
+.notification-list-item > span:not(.notification-item-head) { color: var(--muted); font-size: 9px; }
+.notification-list-item > small { color: #8a9790; font-size: 8px; }
+
+.notification-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.notification-severity,
+.notification-status {
+  display: inline-flex;
+  width: max-content;
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 7px;
+  font-weight: 850;
+}
+
+.severity-info { color: #315f70; background: #e6f2f6; }
+.severity-warning { color: #80530f; background: #fff0cc; }
+.severity-urgent { color: #933e35; background: #fbe4e1; }
+.notification-status-pending { color: #674d12; background: #f6efda; }
+.notification-status-opened { color: #285b71; background: #e5f1f6; }
+.notification-status-done { color: #236141; background: #e3f4e8; }
+.notification-status-dismissed,
+.notification-status-resolved { color: #65716b; background: #edf0ee; }
+
+.notification-empty-filter {
+  display: grid;
+  gap: 5px;
+  padding: 35px 20px;
+  color: var(--muted);
+  text-align: center;
+}
+.notification-empty-filter strong { color: var(--forest); font-size: 11px; }
+.notification-empty-filter span { font-size: 8px; }
+
+.notification-detail { padding: 24px; }
+.notification-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.notification-detail-head h3 { margin: 6px 0 4px; font-size: 20px; letter-spacing: -.035em; }
+.notification-detail-head p { margin: 0; color: var(--muted); font-size: 9px; }
+
+.notification-recipient-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 21px;
+}
+
+.notification-recipient-grid > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+}
+.notification-recipient-grid span { color: var(--muted); font-size: 8px; }
+.notification-recipient-grid strong { overflow-wrap: anywhere; font-size: 10px; }
+
+.message-preview {
+  margin-top: 12px;
+  padding: 15px;
+  border: 1px solid #dbe7d4;
+  border-radius: 13px;
+  background: #f7faef;
+}
+.message-preview > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.message-preview > div > span { color: var(--muted); font-size: 8px; font-weight: 750; }
+.message-preview p { margin: 10px 0 0; color: #405046; font-size: 10px; line-height: 1.65; white-space: pre-wrap; }
+
+.composer-note {
+  margin-top: 11px;
+  padding: 11px 13px;
+  border-left: 3px solid #d9a23a;
+  background: #fff8e9;
+}
+.composer-note strong { font-size: 9px; }
+.composer-note p { margin: 3px 0 0; color: #706044; font-size: 8px; line-height: 1.55; }
+
+.notification-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 15px;
+}
+.notification-actions .button { min-width: 0; padding-inline: 10px; }
+.whatsapp-button { color: white; border-color: #25855b; background: #25855b; }
+.whatsapp-button:hover { background: #1e704c; }
+
+.notification-resolution {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 15px;
+  margin-top: 13px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+
+.notification-feedback { margin-top: 12px; }
+.notification-history { display: grid; gap: 8px; margin-top: 18px; padding-top: 17px; border-top: 1px solid var(--line); }
+.notification-history > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.notification-history h4 { margin: 0; font-size: 12px; }
+.notification-history > div > span { color: var(--muted); font-size: 8px; }
+.notification-history article { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 9px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); }
+.notification-history article > span { display: grid; width: 27px; height: 27px; place-items: center; border-radius: 9px; color: var(--forest); background: var(--lime-soft); font-size: 9px; font-weight: 900; }
+.notification-history article strong { display: block; font-size: 9px; }
+.notification-history article small { display: block; margin-top: 3px; color: var(--muted); font-size: 8px; }
+.notification-history > p { margin: 0; color: var(--muted); font-size: 9px; }
+
+.empty-notifications {
+  display: grid;
+  min-height: 310px;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  text-align: center;
+}
+.empty-notifications > span { display: grid; width: 44px; height: 44px; place-items: center; border-radius: 50%; color: white; background: var(--forest-2); font-weight: 900; }
+.empty-notifications h3 { margin: 7px 0 0; font-size: 15px; }
+.empty-notifications p { max-width: 390px; margin: 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.empty-notifications .button { margin-top: 6px; }
+
 /* Authenticated A4 warranty service job sheet. */
 .job-sheet-page {
   min-height: 100vh;
@@ -3718,10 +3919,12 @@ a {
   .sidebar-account { justify-content: center; padding-inline: 0; }
   .content-grid { grid-template-columns: 1fr; }
   .claims-workspace { grid-template-columns: 1fr; }
+  .notification-workspace { grid-template-columns: 1fr; }
   .staff-layout, .settings-layout { grid-template-columns: 1fr; }
   .sales-workspace, .digital-warranty-body { grid-template-columns: 1fr; }
   .warranty-qr-panel { border-top: 1px solid var(--line); border-left: 0; }
   .claim-list { max-height: 360px; }
+  .notification-list { max-height: 390px; }
   .hero { grid-template-columns: 1fr; }
   .hero-proof { display: none; }
 }
@@ -3800,6 +4003,8 @@ a {
   .customer-card-links .button { justify-content: center; }
   .readiness-grid, .restore-fields { grid-template-columns: 1fr; }
   .backup-toolbar { align-items: stretch; flex-direction: column; }
+  .notification-detail-head { flex-direction: column; }
+  .notification-recipient-grid, .notification-actions { grid-template-columns: 1fr; }
   .backup-row { grid-template-columns: 32px minmax(0,1fr); }
   .backup-actions { grid-column: 2; justify-content: flex-start; }
   .full-field { grid-column: auto; }

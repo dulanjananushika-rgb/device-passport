@@ -18,9 +18,11 @@ import {
 } from "../../lib/inspection";
 import { SalesPanel } from "./SalesPanel";
 import { RecoveryPanel } from "./RecoveryPanel";
+import { NotificationCenter } from "./NotificationCenter";
 import type { SystemReadiness } from "../../lib/readiness";
+import type { NotificationItem } from "../../lib/notifications";
 
-type View = "overview" | "devices" | "sales" | "warranties" | "reports" | "staff" | "settings";
+type View = "overview" | "devices" | "sales" | "warranties" | "notifications" | "reports" | "staff" | "settings";
 type WizardStage = 1 | 2 | 3;
 
 const viewTitles: Record<View, { eyebrow: string; title: string }> = {
@@ -28,6 +30,7 @@ const viewTitles: Record<View, { eyebrow: string; title: string }> = {
   devices: { eyebrow: "Inventory", title: "Device passports" },
   sales: { eyebrow: "Customer handover", title: "Sales activation" },
   warranties: { eyebrow: "After-sales", title: "Warranty claims" },
+  notifications: { eyebrow: "Customer follow-up", title: "Notification centre" },
   reports: { eyebrow: "Performance", title: "Health reports" },
   staff: { eyebrow: "Access control", title: "Staff accounts" },
   settings: { eyebrow: "Configuration", title: "Shop settings" },
@@ -37,6 +40,7 @@ type DashboardProps = {
   initialDevices: DeviceRecord[];
   initialClaims: WarrantyClaimSummary[];
   initialClaimAssignees: ClaimAssignee[];
+  initialNotifications: NotificationItem[];
   initialStaff: StaffAccount[];
   initialAudit: AuditEvent[];
   initialSettings: ShopSettings;
@@ -44,9 +48,10 @@ type DashboardProps = {
   session: StaffSession;
 };
 
-export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees, initialStaff, initialAudit, initialSettings, initialSystem, session }: DashboardProps) {
+export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees, initialNotifications, initialStaff, initialAudit, initialSettings, initialSystem, session }: DashboardProps) {
   const [records, setRecords] = useState(initialDevices);
   const [claims, setClaims] = useState(initialClaims);
+  const [notifications, setNotifications] = useState(initialNotifications);
   const [staff, setStaff] = useState(initialStaff);
   const [audit, setAudit] = useState(initialAudit);
   const [settings, setSettings] = useState(initialSettings);
@@ -165,6 +170,7 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
   const title = viewTitles[view];
   const reviewCount = records.filter((device) => device.status === "Needs review").length;
   const openClaimCount = claims.filter((claim) => claim.status !== "Completed" && claim.status !== "Rejected").length;
+  const activeNotificationCount = notifications.filter((notification) => notification.status === "Pending" || notification.status === "Opened").length;
   const canTestDevices = session.role === "Owner" || session.role === "Technician";
   const canActivateDeviceSales = canActivateSales(session.role);
   const isOwner = session.role === "Owner";
@@ -188,6 +194,14 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
     setAudit(result.audit as AuditEvent[]);
   }
 
+  async function openNotifications() {
+    setView("notifications");
+    const response = await fetch("/api/notifications");
+    if (!response.ok) return;
+    const result = await response.json();
+    setNotifications(result.notifications as NotificationItem[]);
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar" aria-label="Main navigation">
@@ -201,6 +215,7 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
           <NavButton icon="D" label="Devices" active={view === "devices"} onClick={() => setView("devices")} />
           <NavButton icon="$" label="Sales" active={view === "sales"} onClick={() => setView("sales")} />
           <NavButton icon="C" label="Claims" active={view === "warranties"} onClick={() => setView("warranties")} />
+          <NavButton icon="N" label="Notifications" active={view === "notifications"} onClick={openNotifications} />
           <NavButton icon="R" label="Reports" active={view === "reports"} onClick={() => setView("reports")} />
           {isOwner && <NavButton icon="T" label="Staff" active={view === "staff"} onClick={() => setView("staff")} />}
           <NavButton icon="S" label="Settings" active={view === "settings"} onClick={() => setView("settings")} />
@@ -217,7 +232,7 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
         <header className="topbar">
           <div><div className="eyebrow">{title.eyebrow}</div><h1>{title.title}</h1></div>
           <div className="top-actions">
-            <button className="icon-button" aria-label="Notifications">N{openClaimCount > 0 && <span className="notification-dot" />}</button>
+            <button className="icon-button" aria-label={`Notifications${activeNotificationCount ? ` (${activeNotificationCount})` : ""}`} onClick={openNotifications}>N{activeNotificationCount > 0 && <small>{activeNotificationCount > 9 ? "9+" : activeNotificationCount}</small>}</button>
             {canTestDevices && <button className="button primary" onClick={() => setModalOpen(true)}>+ New device test</button>}
           </div>
         </header>
@@ -228,6 +243,7 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
         {view === "devices" && <DeviceList devices={filteredDevices} query={query} onQuery={setQuery} onNewTest={() => setModalOpen(true)} canCreate={canTestDevices} />}
         {view === "sales" && <SalesPanel devices={records} canActivate={canActivateDeviceSales} warrantyMonths={settings.warrantyMonths} onDeviceChange={updateDevice} onAuditChange={refreshAudit} />}
         {view === "warranties" && <Warranties records={records} claims={claims} assignees={initialClaimAssignees} currentStaffId={session.id} onClaimUpdate={(updated) => setClaims((current) => current.map((claim) => claim.id === updated.id ? updated : claim))} />}
+        {view === "notifications" && <NotificationCenter initialNotifications={notifications} onNotificationsChange={setNotifications} />}
         {view === "reports" && <Reports records={records} />}
         {view === "staff" && isOwner && <StaffPanel staff={staff} audit={audit} currentStaffId={session.id} onStaffChange={setStaff} onAuditChange={refreshAudit} />}
         {view === "settings" && <SettingsPanel settings={settings} session={session} initialSystem={initialSystem} onSettingsChange={setSettings} onAuditChange={refreshAudit} />}
