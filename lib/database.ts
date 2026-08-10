@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -10,6 +10,14 @@ import {
   type InspectionChecks,
   type InspectionPhotoInput,
 } from "./inspection";
+import {
+  isClaimCategory,
+  type ClaimEvent,
+  type ClaimStatus,
+  type PublicWarrantyClaim,
+  type WarrantyClaimInput,
+  type WarrantyClaimSummary,
+} from "./claims";
 
 type DeviceRow = {
   id: string;
@@ -47,6 +55,33 @@ type PhotoRow = {
   data?: Uint8Array;
 };
 
+type ClaimRow = {
+  id: string;
+  tracking_token: string;
+  device_id: string;
+  device_name: string;
+  serial: string;
+  customer_name: string;
+  customer_email: string;
+  customer_phone: string;
+  category: WarrantyClaimSummary["category"];
+  description: string;
+  status: ClaimStatus;
+  warranty_valid: number;
+  warranty_ends: string;
+  created_at: string;
+  updated_at: string;
+  photo_count: number;
+};
+
+type ClaimEventRow = {
+  id: string;
+  status: ClaimStatus;
+  note: string;
+  actor: string;
+  created_at: string;
+};
+
 export type PassportEvidence = {
   checks: InspectionChecks;
   notes: string;
@@ -60,8 +95,52 @@ function databasePath() {
   return process.env.DEVICEPASSPORT_DATABASE_PATH ?? path.join(process.cwd(), ".data", "device-passport.db");
 }
 
+function ensureClaimSchema(database: DatabaseSync) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS warranty_claims (
+      id TEXT PRIMARY KEY,
+      tracking_token TEXT NOT NULL UNIQUE,
+      device_id TEXT NOT NULL,
+      customer_name TEXT NOT NULL,
+      customer_email TEXT NOT NULL DEFAULT '',
+      customer_phone TEXT NOT NULL DEFAULT '',
+      category TEXT NOT NULL,
+      description TEXT NOT NULL,
+      status TEXT NOT NULL,
+      warranty_valid INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS claim_photos (
+      id TEXT PRIMARY KEY,
+      claim_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      data BLOB NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (claim_id) REFERENCES warranty_claims(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS claim_events (
+      id TEXT PRIMARY KEY,
+      claim_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      note TEXT NOT NULL,
+      actor TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (claim_id) REFERENCES warranty_claims(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_warranty_claims_device ON warranty_claims(device_id);
+    CREATE INDEX IF NOT EXISTS idx_warranty_claims_status ON warranty_claims(status);
+    CREATE INDEX IF NOT EXISTS idx_claim_events_claim ON claim_events(claim_id, created_at);
+  `);
+}
+
 function getDatabase() {
-  if (globalDatabase.devicePassportDb) return globalDatabase.devicePassportDb;
+  if (globalDatabase.devicePassportDb) {
+    ensureClaimSchema(globalDatabase.devicePassportDb);
+    return globalDatabase.devicePassportDb;
+  }
 
   const filePath = databasePath();
   mkdirSync(path.dirname(filePath), { recursive: true });
@@ -115,6 +194,7 @@ function getDatabase() {
       FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
     );
   `);
+  ensureClaimSchema(database);
 
   const insert = database.prepare(`
     INSERT OR IGNORE INTO devices (
@@ -199,6 +279,157 @@ export function getPassportPhoto(deviceId: string, photoId: string) {
   return row?.data ? { data: row.data, mimeType: row.mime_type, name: row.name } : null;
 }
 
+const claimSummarySql = `
+  SELECT c.*, d.name AS device_name, d.serial, d.warranty_ends,
+    (SELECT COUNT(*) FROM claim_photos p WHERE p.claim_id = c.id) AS photo_count
+  FROM warranty_claims c
+  JOIN devices d ON d.id = c.device_id
+`;
+
+function rowToClaimSummary(row: ClaimRow): WarrantyClaimSummary {
+  return {
+    id: row.id,
+    trackingToken: row.tracking_token,
+    deviceId: row.device_id,
+    deviceName: row.device_name,
+    serial: row.serial,
+    customerName: row.customer_name,
+    customerEmail: row.customer_email,
+    customerPhone: row.customer_phone,
+    category: row.category,
+    description: row.description,
+    status: row.status,
+    warrantyValid: Boolean(row.warranty_valid),
+    warrantyEnds: row.warranty_ends,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    photoCount: row.photo_count,
+  };
+}
+
+export function listWarrantyClaims(): WarrantyClaimSummary[] {
+  const rows = getDatabase().prepare(`${claimSummarySql} ORDER BY c.updated_at DESC, c.id DESC`).all() as unknown as ClaimRow[];
+  return rows.map(rowToClaimSummary);
+}
+
+export function createWarrantyClaim(deviceId: string, input: WarrantyClaimInput): WarrantyClaimSummary {
+  const database = getDatabase();
+  const deviceRow = database.prepare("SELECT * FROM devices WHERE lower(id) = lower(?)").get(deviceId) as unknown as DeviceRow | undefined;
+  if (!deviceRow) throw new Error("This device passport could not be found.");
+
+  const customerName = input.customerName?.trim();
+  const customerEmail = input.customerEmail?.trim().toLowerCase() ?? "";
+  const customerPhone = input.customerPhone?.trim() ?? "";
+  const description = input.description?.trim();
+  if (!customerName || customerName.length < 2 || customerName.length > 100) throw new Error("Enter the customer's full name.");
+  if (!customerEmail && !customerPhone) throw new Error("Enter an email address or phone number.");
+  if (customerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) throw new Error("Enter a valid email address.");
+  if (customerPhone.length > 30) throw new Error("The phone number is too long.");
+  if (!isClaimCategory(input.category)) throw new Error("Choose a valid issue category.");
+  if (!description || description.length < 15 || description.length > 1500) throw new Error("Describe the issue using 15 to 1500 characters.");
+  if (!Array.isArray(input.photos) || input.photos.length > 4) throw new Error("A maximum of four evidence photos is allowed.");
+
+  const preparedPhotos = input.photos.map(parsePhoto);
+  const now = new Date().toISOString();
+  const claimId = `CLM-${now.slice(2, 10).replaceAll("-", "")}-${randomUUID().slice(0, 4).toUpperCase()}`;
+  const trackingToken = randomBytes(18).toString("base64url");
+  const warrantyValid = isWarrantyActive(deviceRow.warranty_ends);
+
+  database.exec("BEGIN");
+  try {
+    database.prepare(`
+      INSERT INTO warranty_claims (
+        id, tracking_token, device_id, customer_name, customer_email, customer_phone,
+        category, description, status, warranty_valid, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'New', ?, ?, ?)
+    `).run(claimId, trackingToken, deviceRow.id, customerName, customerEmail, customerPhone, input.category, description, warrantyValid ? 1 : 0, now, now);
+    const insertPhoto = database.prepare("INSERT INTO claim_photos (id, claim_id, name, mime_type, data, created_at) VALUES (?, ?, ?, ?, ?, ?)");
+    for (const photo of preparedPhotos) insertPhoto.run(randomUUID(), claimId, photo.name, photo.mimeType, photo.data, now);
+    database.prepare("INSERT INTO claim_events (id, claim_id, status, note, actor, created_at) VALUES (?, ?, 'New', ?, 'Customer', ?)")
+      .run(randomUUID(), claimId, warrantyValid ? "Warranty claim received and coverage confirmed." : "Service request received; warranty coverage requires review.", now);
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+
+  const row = database.prepare(`${claimSummarySql} WHERE c.id = ?`).get(claimId) as unknown as ClaimRow;
+  return rowToClaimSummary(row);
+}
+
+export function findPublicClaim(trackingToken: string): PublicWarrantyClaim | null {
+  const database = getDatabase();
+  const row = database.prepare(`${claimSummarySql} WHERE c.tracking_token = ?`).get(trackingToken) as unknown as ClaimRow | undefined;
+  if (!row) return null;
+  const photos = database.prepare("SELECT id, name, mime_type FROM claim_photos WHERE claim_id = ? ORDER BY created_at, id").all(row.id) as unknown as PhotoRow[];
+  const eventRows = database.prepare("SELECT id, status, note, actor, created_at FROM claim_events WHERE claim_id = ? ORDER BY created_at DESC, id DESC").all(row.id) as unknown as ClaimEventRow[];
+  const summary = rowToClaimSummary(row);
+  const { trackingToken: _trackingToken, customerEmail: _customerEmail, customerPhone: _customerPhone, ...publicSummary } = summary;
+  void _trackingToken;
+  void _customerEmail;
+  void _customerPhone;
+  const events: ClaimEvent[] = eventRows.map((event) => ({
+    id: event.id,
+    status: event.status,
+    note: event.note,
+    actor: event.actor === "Customer" ? "Customer" : "Lapmart support",
+    createdAt: event.created_at,
+  }));
+  return {
+    ...publicSummary,
+    photos: photos.map((photo) => ({ id: photo.id, name: photo.name, mimeType: photo.mime_type })),
+    events,
+  };
+}
+
+export function getClaimPhoto(trackingToken: string, photoId: string) {
+  const row = getDatabase().prepare(`
+    SELECT p.id, p.name, p.mime_type, p.data
+    FROM claim_photos p
+    JOIN warranty_claims c ON c.id = p.claim_id
+    WHERE c.tracking_token = ? AND p.id = ?
+  `).get(trackingToken, photoId) as unknown as PhotoRow | undefined;
+  return row?.data ? { data: row.data, mimeType: row.mime_type, name: row.name } : null;
+}
+
+export function updateWarrantyClaimStatus(claimId: string, status: ClaimStatus, note: string, actor: string): WarrantyClaimSummary {
+  const database = getDatabase();
+  const current = database.prepare("SELECT status FROM warranty_claims WHERE id = ?").get(claimId) as { status: ClaimStatus } | undefined;
+  if (!current) throw new Error("Warranty claim not found.");
+  const publicNote = note.trim().slice(0, 600) || defaultStatusNote(status);
+  const now = new Date().toISOString();
+
+  database.exec("BEGIN");
+  try {
+    database.prepare("UPDATE warranty_claims SET status = ?, updated_at = ? WHERE id = ?").run(status, now, claimId);
+    database.prepare("INSERT INTO claim_events (id, claim_id, status, note, actor, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(randomUUID(), claimId, status, publicNote, actor, now);
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+
+  const row = database.prepare(`${claimSummarySql} WHERE c.id = ?`).get(claimId) as unknown as ClaimRow;
+  return rowToClaimSummary(row);
+}
+
+function defaultStatusNote(status: ClaimStatus) {
+  const notes: Record<ClaimStatus, string> = {
+    New: "Your claim has been returned to the intake queue.",
+    Reviewing: "A technician is reviewing the reported issue.",
+    Approved: "The warranty service request has been approved.",
+    Rejected: "The warranty service request was not approved. Contact the shop for details.",
+    Completed: "The warranty service has been completed.",
+  };
+  return notes[status];
+}
+
+export function isWarrantyActive(value: string) {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && timestamp + 24 * 60 * 60 * 1000 > Date.now();
+}
+
 export function createDeviceFromReport(
   report: DiagnosticReport,
   checks: InspectionChecks,
@@ -267,6 +498,7 @@ export function createDeviceFromReport(
 }
 
 function parsePhoto(photo: InspectionPhotoInput) {
+  if (!photo || typeof photo.name !== "string" || typeof photo.dataUrl !== "string") throw new Error("Every photo upload must include a valid name and image.");
   const match = /^data:(image\/(?:jpeg|png|webp));base64,([a-zA-Z0-9+/=]+)$/.exec(photo.dataUrl);
   if (!match) throw new Error(`Photo ${photo.name || "upload"} must be a JPEG, PNG, or WebP image.`);
   const data = Buffer.from(match[2], "base64");

@@ -11,6 +11,9 @@ DevicePassport is an independent shop system for refurbished laptop health repor
 - Three-step diagnostic import, technician inspection, and approval workflow
 - Photo evidence stored with each passport
 - Public QR passport pages and printable 40 × 25 mm asset labels
+- Account-free warranty claim submission with evidence photos
+- Private customer tracking links and a technician status timeline
+- Authenticated claims inbox for shop staff
 - Windows PowerShell diagnostic collector
 
 ## Run locally
@@ -47,6 +50,14 @@ npm run smoke
 ```
 
 The smoke test removes its temporary device record when it finishes.
+
+## Warranty claim flow
+
+1. Open a public passport and choose **Start warranty claim**.
+2. Enter one contact method, describe the issue, and optionally attach up to four photos.
+3. Save the private tracking link shown after submission.
+4. Open **Claims** in the shop dashboard to review the request and publish status updates.
+5. The customer sees each update on the private tracker without creating an account.
 
 ## Windows collector
 

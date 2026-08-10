@@ -3,6 +3,7 @@
 import { ChangeEvent, useMemo, useState } from "react";
 import Image from "next/image";
 import type { DeviceRecord } from "../data/devices";
+import { claimStatuses, type ClaimStatus, type WarrantyClaimSummary } from "../../lib/claims";
 import {
   calculateInspectionScore,
   inspectionKeys,
@@ -20,12 +21,13 @@ type WizardStage = 1 | 2 | 3;
 const viewTitles: Record<View, { eyebrow: string; title: string }> = {
   overview: { eyebrow: "Operations", title: "Shop overview" },
   devices: { eyebrow: "Inventory", title: "Device passports" },
-  warranties: { eyebrow: "After-sales", title: "Warranty control" },
+  warranties: { eyebrow: "After-sales", title: "Warranty claims" },
   reports: { eyebrow: "Performance", title: "Health reports" },
 };
 
-export function Dashboard({ initialDevices, userEmail }: { initialDevices: DeviceRecord[]; userEmail: string }) {
+export function Dashboard({ initialDevices, initialClaims, userEmail }: { initialDevices: DeviceRecord[]; initialClaims: WarrantyClaimSummary[]; userEmail: string }) {
   const [records, setRecords] = useState(initialDevices);
+  const [claims, setClaims] = useState(initialClaims);
   const [view, setView] = useState<View>("overview");
   const [query, setQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -140,6 +142,7 @@ export function Dashboard({ initialDevices, userEmail }: { initialDevices: Devic
   const title = viewTitles[view];
   const publishedCount = records.filter((device) => device.status === "Published").length;
   const reviewCount = records.filter((device) => device.status === "Needs review").length;
+  const openClaimCount = claims.filter((claim) => claim.status !== "Completed" && claim.status !== "Rejected").length;
 
   return (
     <div className="app-shell">
@@ -152,7 +155,7 @@ export function Dashboard({ initialDevices, userEmail }: { initialDevices: Devic
         <div className="nav-stack">
           <NavButton icon="H" label="Overview" active={view === "overview"} onClick={() => setView("overview")} />
           <NavButton icon="D" label="Devices" active={view === "devices"} onClick={() => setView("devices")} />
-          <NavButton icon="W" label="Warranties" active={view === "warranties"} onClick={() => setView("warranties")} />
+          <NavButton icon="C" label="Claims" active={view === "warranties"} onClick={() => setView("warranties")} />
           <NavButton icon="R" label="Reports" active={view === "reports"} onClick={() => setView("reports")} />
         </div>
 
@@ -173,16 +176,16 @@ export function Dashboard({ initialDevices, userEmail }: { initialDevices: Devic
         <header className="topbar">
           <div><div className="eyebrow">{title.eyebrow}</div><h1>{title.title}</h1></div>
           <div className="top-actions">
-            <button className="icon-button" aria-label="Notifications">N<span className="notification-dot" /></button>
+            <button className="icon-button" aria-label="Notifications">N{openClaimCount > 0 && <span className="notification-dot" />}</button>
             <button className="button primary" onClick={() => setModalOpen(true)}>+ New device test</button>
           </div>
         </header>
 
         {view === "overview" && (
-          <Overview records={records} publishedCount={publishedCount} reviewCount={reviewCount} onNewTest={() => setModalOpen(true)} onViewDevices={() => setView("devices")} />
+          <Overview records={records} publishedCount={publishedCount} reviewCount={reviewCount} openClaimCount={openClaimCount} onNewTest={() => setModalOpen(true)} onViewDevices={() => setView("devices")} />
         )}
         {view === "devices" && <DeviceList devices={filteredDevices} query={query} onQuery={setQuery} onNewTest={() => setModalOpen(true)} />}
-        {view === "warranties" && <Warranties records={records} />}
+        {view === "warranties" && <Warranties records={records} claims={claims} onClaimUpdate={(updated) => setClaims((current) => current.map((claim) => claim.id === updated.id ? updated : claim))} />}
         {view === "reports" && <Reports records={records} />}
       </main>
 
@@ -244,7 +247,7 @@ function NavButton({ icon, label, active, onClick }: { icon: string; label: stri
   return <button className={`nav-item ${active ? "active" : ""}`} onClick={onClick} aria-current={active ? "page" : undefined}><span className="nav-icon" aria-hidden="true">{icon}</span><span>{label}</span></button>;
 }
 
-function Overview({ records, publishedCount, reviewCount, onNewTest, onViewDevices }: { records: DeviceRecord[]; publishedCount: number; reviewCount: number; onNewTest: () => void; onViewDevices: () => void }) {
+function Overview({ records, publishedCount, reviewCount, openClaimCount, onNewTest, onViewDevices }: { records: DeviceRecord[]; publishedCount: number; reviewCount: number; openClaimCount: number; onNewTest: () => void; onViewDevices: () => void }) {
   const latest = records[0];
   return (
     <>
@@ -252,7 +255,7 @@ function Overview({ records, publishedCount, reviewCount, onNewTest, onViewDevic
         <div className="hero-copy"><div className="hero-kicker">Trust, made visible</div><h2>Every refurbished laptop deserves proof.</h2><p>Run a consistent health test, publish a transparent device passport, and keep the warranty in one place from intake to after-sales.</p><div className="hero-actions"><button className="button primary" onClick={onNewTest}>+ Test a laptop</button>{latest && <a className="button secondary" href={`/passport/${latest.id}`}>View customer passport</a>}</div></div>
         {latest && <div className="hero-proof" aria-label="Latest verified device summary"><div className="proof-top"><div><div className="proof-label">Latest passport</div><div className="proof-device">{latest.name}</div></div><div className="grade-badge">{latest.grade}</div></div><div className="health-meter"><div className="health-row"><span>Overall health</span><strong>{latest.score} / 100</strong></div><div className="meter"><span style={{ width: `${latest.score}%` }} /></div></div><div className="proof-meta"><div><span>Battery</span><strong>{latest.batteryHealth}% health</strong></div><div><span>Storage</span><strong>{latest.storageHealth}% healthy</strong></div><div><span>Test ID</span><strong>{latest.id}</strong></div><div><span>Status</span><strong>{latest.status}</strong></div></div></div>}
       </section>
-      <section className="stats" aria-label="Business summary"><Stat label="Total passports" value={String(records.length)} indicator="Live DB" /><Stat label="Published devices" value={String(publishedCount)} indicator={`${Math.round((publishedCount / Math.max(records.length, 1)) * 100)}%`} /><Stat label="Needs review" value={String(reviewCount)} indicator={reviewCount ? "Attention" : "Clear"} /><Stat label="Open claims" value="0" indicator="No claims" /></section>
+      <section className="stats" aria-label="Business summary"><Stat label="Total passports" value={String(records.length)} indicator="Live DB" /><Stat label="Published devices" value={String(publishedCount)} indicator={`${Math.round((publishedCount / Math.max(records.length, 1)) * 100)}%`} /><Stat label="Needs review" value={String(reviewCount)} indicator={reviewCount ? "Attention" : "Clear"} /><Stat label="Open claims" value={String(openClaimCount)} indicator={openClaimCount ? "Action needed" : "Clear"} /></section>
       <section className="content-grid">
         <div className="panel"><div className="panel-head"><div><h3 className="panel-title">Recent device tests</h3><p className="panel-subtitle">Saved in your standalone database</p></div><button className="text-link" onClick={onViewDevices}>View all</button></div><DeviceTable devices={records.slice(0, 4)} /></div>
         <div className="panel"><div className="panel-head"><div><h3 className="panel-title">System status</h3><p className="panel-subtitle">Independent Next.js stack</p></div></div><div className="activity-list"><Activity icon="DB" title="Local database connected" body={`${records.length} device records available`} time="Live" /><Activity icon="API" title="Report upload API" body="Authenticated technician endpoint" time="Ready" /><Activity icon="QR" title="Public passports" body="Customers do not need an account" time="Open" /></div></div>
@@ -265,9 +268,105 @@ function DeviceList({ devices, query, onQuery, onNewTest }: { devices: DeviceRec
   return <section className="page-section"><div className="section-head"><div><div className="eyebrow">{devices.length} records</div><h2>Device inventory</h2></div><div className="row-actions"><input className="search" value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Search name, serial or passport" aria-label="Search device passports" /><button className="button primary" onClick={onNewTest}>+ New test</button></div></div><div className="panel">{devices.length ? <DeviceTable devices={devices} /> : <div className="empty-state">No passports match &quot;{query}&quot;.</div>}</div></section>;
 }
 
-function Warranties({ records }: { records: DeviceRecord[] }) {
-  const active = records.filter((device) => device.status === "Published");
-  return <section className="page-section"><div className="section-head"><div><div className="eyebrow">{active.length} protected devices</div><h2>Warranty pipeline</h2></div></div><section className="stats"><Stat label="Active" value={String(active.length)} indicator="Current" /><Stat label="Needs review" value={String(records.length - active.length)} indicator="Follow up" /><Stat label="Open claims" value="0" indicator="Clear" /><Stat label="Resolved this month" value="0" indicator="No claims" /></section><div className="panel"><div className="panel-head"><div><h3 className="panel-title">Warranty device list</h3><p className="panel-subtitle">Public passport and coverage status</p></div></div><DeviceTable devices={records} /></div></section>;
+function Warranties({ records, claims, onClaimUpdate }: { records: DeviceRecord[]; claims: WarrantyClaimSummary[]; onClaimUpdate: (claim: WarrantyClaimSummary) => void }) {
+  const [selectedId, setSelectedId] = useState(claims[0]?.id ?? "");
+  const [nextStatus, setNextStatus] = useState<ClaimStatus>(claims[0]?.status ?? "New");
+  const [publicNote, setPublicNote] = useState("");
+  const [updateError, setUpdateError] = useState("");
+  const [updating, setUpdating] = useState(false);
+  const [referenceTime] = useState(() => Date.now());
+  const selected = claims.find((claim) => claim.id === selectedId) ?? claims[0];
+  const activeCoverage = records.filter((device) => {
+    const expiry = Date.parse(device.warrantyEnds);
+    return Number.isFinite(expiry) && expiry + 24 * 60 * 60 * 1000 > referenceTime;
+  }).length;
+  const openClaims = claims.filter((claim) => claim.status !== "Completed" && claim.status !== "Rejected").length;
+  const completedClaims = claims.filter((claim) => claim.status === "Completed").length;
+
+  function chooseClaim(claim: WarrantyClaimSummary) {
+    setSelectedId(claim.id);
+    setNextStatus(claim.status);
+    setPublicNote("");
+    setUpdateError("");
+  }
+
+  async function updateClaim() {
+    if (!selected) return;
+    setUpdating(true);
+    setUpdateError("");
+    const response = await fetch(`/api/claims/${encodeURIComponent(selected.id)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: nextStatus, note: publicNote }),
+    });
+    const result = await response.json().catch(() => ({ error: "The server returned an invalid response." }));
+    if (!response.ok) {
+      setUpdateError(result.error ?? "The claim could not be updated.");
+      setUpdating(false);
+      return;
+    }
+    onClaimUpdate(result.claim as WarrantyClaimSummary);
+    setPublicNote("");
+    setUpdating(false);
+  }
+
+  return (
+    <section className="page-section">
+      <div className="section-head"><div><div className="eyebrow">{claims.length} customer requests</div><h2>Warranty pipeline</h2></div></div>
+      <section className="stats"><Stat label="Active coverage" value={String(activeCoverage)} indicator="Current" /><Stat label="New claims" value={String(claims.filter((claim) => claim.status === "New").length)} indicator="Inbox" /><Stat label="Open claims" value={String(openClaims)} indicator={openClaims ? "Action needed" : "Clear"} /><Stat label="Completed" value={String(completedClaims)} indicator="All time" /></section>
+
+      {claims.length ? (
+        <div className="claims-workspace">
+          <section className="panel claims-inbox">
+            <div className="panel-head"><div><h3 className="panel-title">Claims inbox</h3><p className="panel-subtitle">Newest activity appears first</p></div></div>
+            <div className="claim-list">
+              {claims.map((claim) => (
+                <button type="button" key={claim.id} className={`claim-list-item ${selected?.id === claim.id ? "selected" : ""}`} onClick={() => chooseClaim(claim)}>
+                  <span className={`claim-status status-${claim.status.toLowerCase()}`}>{claim.status}</span>
+                  <strong>{claim.deviceName}</strong>
+                  <span>{claim.category} • {claim.customerName}</span>
+                  <small>{claim.id} • {formatClaimDate(claim.updatedAt)}</small>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {selected && (
+            <section className="panel claim-detail">
+              <div className="claim-detail-head">
+                <div><div className="eyebrow">{selected.id}</div><h3>{selected.category} claim</h3><p>{selected.deviceName} • {selected.deviceId}</p></div>
+                <span className={`coverage-chip ${selected.warrantyValid ? "active" : "expired"}`}>{selected.warrantyValid ? "Coverage confirmed" : "Coverage review"}</span>
+              </div>
+              <div className="claim-detail-grid">
+                <div><span>Customer</span><strong>{selected.customerName}</strong></div>
+                <div><span>Contact</span><strong>{selected.customerEmail || selected.customerPhone}</strong>{selected.customerEmail && selected.customerPhone && <small>{selected.customerPhone}</small>}</div>
+                <div><span>Submitted</span><strong>{formatClaimDate(selected.createdAt)}</strong></div>
+                <div><span>Evidence</span><strong>{selected.photoCount} photo{selected.photoCount === 1 ? "" : "s"}</strong></div>
+              </div>
+              <div className="claim-description-box"><span>Customer description</span><p>{selected.description}</p></div>
+              <a className="text-link" href={`/claim/${selected.trackingToken}`} target="_blank" rel="noreferrer">Open private customer tracker ↗</a>
+
+              <div className="claim-update-box">
+                <div><h4>Update customer</h4><p>This status and note will appear on the private tracking page.</p></div>
+                <div className="claim-update-fields">
+                  <label>Status<select value={nextStatus} onChange={(event) => setNextStatus(event.target.value as ClaimStatus)}>{claimStatuses.map((status) => <option key={status}>{status}</option>)}</select></label>
+                  <label>Customer update<textarea value={publicNote} onChange={(event) => setPublicNote(event.target.value)} maxLength={600} placeholder="Optional — a clear default update is used when empty" /></label>
+                </div>
+                {updateError && <div className="error-box" role="alert">{updateError}</div>}
+                <button className="button primary" type="button" disabled={updating || (nextStatus === selected.status && !publicNote.trim())} onClick={updateClaim}>{updating ? "Saving update…" : "Save status update"}</button>
+              </div>
+            </section>
+          )}
+        </div>
+      ) : (
+        <div className="panel empty-claims"><span>✓</span><h3>No warranty claims yet</h3><p>Customer requests submitted from a public device passport will appear here automatically.</p></div>
+      )}
+    </section>
+  );
+}
+
+function formatClaimDate(value: string) {
+  return new Date(value).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
 }
 
 function Reports({ records }: { records: DeviceRecord[] }) {

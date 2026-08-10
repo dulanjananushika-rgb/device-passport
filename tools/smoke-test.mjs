@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 
 const baseUrl = process.env.DEVICEPASSPORT_TEST_URL ?? "http://localhost:3000";
 const serial = `CODEX-SMOKE-${Date.now()}`;
+const tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
 async function expectOk(response, step) {
   if (!response.ok) throw new Error(`${step} failed (${response.status}): ${await response.text()}`);
@@ -29,7 +30,7 @@ try {
       notes: "Smoke-test evidence note: cosmetic condition verified.",
       photos: [{
         name: "smoke-proof.png",
-        dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        dataUrl: tinyPng,
       }],
     }),
   }), "Report import");
@@ -47,13 +48,52 @@ try {
   const labelHtml = await label.text();
   if (!labelHtml.includes("40 × 25 mm")) throw new Error("The printable label page was not rendered.");
 
+  const claimSubmission = await expectOk(await fetch(`${baseUrl}/api/public/passports/${device.id}/claims`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      customerName: "Smoke Test Customer",
+      customerEmail: "smoke@example.com",
+      customerPhone: "",
+      category: "Battery",
+      description: "Battery runtime dropped suddenly during normal customer use.",
+      photos: [{ name: "claim-proof.png", dataUrl: tinyPng }],
+      website: "",
+    }),
+  }), "Claim submission");
+  const { claim } = await claimSubmission.json();
+  const tracker = await expectOk(await fetch(`${baseUrl}/claim/${claim.trackingToken}`), "Private claim tracker");
+  const trackerHtml = await tracker.text();
+  if (!trackerHtml.includes(claim.id) || !trackerHtml.includes("Warranty claim received")) throw new Error("The claim tracker did not render the new claim.");
+  const claimPhotoPath = trackerHtml.match(/\/api\/public\/claims\/[^"']+\/photos\/[^"']+/)?.[0];
+  if (!claimPhotoPath) throw new Error("The claim evidence photo URL was not rendered.");
+  const claimPhoto = await expectOk(await fetch(`${baseUrl}${claimPhotoPath}`), "Claim evidence photo");
+
+  const claimsInbox = await expectOk(await fetch(`${baseUrl}/api/claims`, { headers: { cookie } }), "Claims inbox");
+  const claimsPayload = await claimsInbox.json();
+  if (!claimsPayload.claims.some((item) => item.id === claim.id)) throw new Error("The submitted claim was not in the shop inbox.");
+  const statusUpdate = await expectOk(await fetch(`${baseUrl}/api/claims/${claim.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ status: "Reviewing", note: "Smoke-test technician review started." }),
+  }), "Claim status update");
+  const updatedTracker = await expectOk(await fetch(`${baseUrl}/claim/${claim.trackingToken}`), "Updated claim tracker");
+  const updatedTrackerHtml = await updatedTracker.text();
+  if (!updatedTrackerHtml.includes("Smoke-test technician review started")) throw new Error("The customer timeline did not show the shop update.");
+
   console.log(JSON.stringify({
     login: login.status,
     import: imported.status,
     passport: passport.status,
     photo: photo.status,
     label: label.status,
+    claim: claimSubmission.status,
+    tracker: tracker.status,
+    claimPhoto: claimPhoto.status,
+    inbox: claimsInbox.status,
+    statusUpdate: statusUpdate.status,
     deviceId: device.id,
+    claimId: claim.id,
   }, null, 2));
 } finally {
   const database = new DatabaseSync(new URL("../.data/device-passport.db", import.meta.url));

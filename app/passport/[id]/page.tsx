@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { findDevice, getPassportEvidence } from "../../../lib/database";
+import { findDevice, getPassportEvidence, isWarrantyActive } from "../../../lib/database";
 import { inspectionKeys, inspectionLabels, type CheckStatus } from "../../../lib/inspection";
 import { QrCode } from "../../ui/QrCode";
 
@@ -25,6 +25,7 @@ export default async function PassportPage({ params }: PassportPageProps) {
   const device = findDevice(id);
   if (!device) notFound();
   const evidence = getPassportEvidence(device.id);
+  const warrantyActive = isWarrantyActive(device.warrantyEnds);
 
   return (
     <main className="passport-page">
@@ -119,15 +120,15 @@ export default async function PassportPage({ params }: PassportPageProps) {
               </Link>
               <div className="warranty-card">
                 <span>Digital warranty</span>
-                <strong>Active until {device.warrantyEnds}</strong>
-                <div className="meter"><span style={{ width: "72%" }} /></div>
-                <small>Hardware coverage from the verified seller</small>
+                <strong>{warrantyActive ? `Active until ${device.warrantyEnds}` : `Ended ${device.warrantyEnds}`}</strong>
+                <div className="meter"><span style={{ width: warrantyActive ? "72%" : "0%" }} /></div>
+                <small>{warrantyActive ? "Hardware coverage from the verified seller" : "Service requests remain available for shop review"}</small>
               </div>
               <div className="seller-card">
                 <strong>Sold and verified by Lapmart</strong>
                 <span>Verified DevicePassport partner • Colombo, Sri Lanka</span>
               </div>
-              <a className="button primary" href="mailto:support@example.com" style={{ width: "100%", marginTop: 13 }}>Start warranty claim</a>
+              <Link className="button primary" href={`/passport/${device.id}/claim`} style={{ width: "100%", marginTop: 13 }}>Start warranty claim</Link>
             </aside>
           </div>
         </article>
