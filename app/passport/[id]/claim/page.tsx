@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { findDevice, isWarrantyActive } from "../../../../lib/database";
+import { findDevice, getShopSettings, isWarrantyActive } from "../../../../lib/database";
+import { ShopBrand } from "../../../ui/ShopBrand";
 import { ClaimForm } from "./ClaimForm";
 
 type ClaimPageProps = {
@@ -19,12 +20,13 @@ export default async function ClaimPage({ params }: ClaimPageProps) {
   const device = findDevice(id);
   if (!device) notFound();
   const covered = isWarrantyActive(device.warrantyEnds);
+  const settings = getShopSettings();
 
   return (
     <main className="claim-page">
       <div className="claim-wrap">
         <nav className="passport-nav">
-          <Link className="brand" href={`/passport/${device.id}`} style={{ color: "#123c2e", padding: 0 }}><span className="brand-mark">D</span><span className="brand-name">DevicePassport</span></Link>
+          <ShopBrand settings={settings} href={`/passport/${device.id}`} />
           <span className={`coverage-chip ${covered ? "active" : "expired"}`}>{covered ? "Coverage active" : "Coverage needs review"}</span>
         </nav>
 
@@ -32,11 +34,11 @@ export default async function ClaimPage({ params }: ClaimPageProps) {
           <aside className="claim-device-card">
             <div className="eyebrow">Warranty support</div>
             <h1>Tell us what went wrong.</h1>
-            <p>Submit the issue directly to the shop that verified this device. No customer account is required.</p>
+            <p>Submit the issue directly to {settings.shopName}, the shop that verified this device. No customer account is required.</p>
             <div className="claim-device-summary">
               <span>Verified device</span><strong>{device.name}</strong><small>{device.id} • Serial {device.serial}</small>
             </div>
-            <div className="coverage-summary"><span>Warranty coverage</span><strong>{covered ? `Active until ${device.warrantyEnds}` : `Ended ${device.warrantyEnds}`}</strong><small>{covered ? "Coverage will be confirmed with this claim." : "The shop will review available service options."}</small></div>
+            <div className="coverage-summary"><span>Warranty coverage</span><strong>{covered ? `Active until ${device.warrantyEnds}` : `Ended ${device.warrantyEnds}`}</strong><small>{covered ? "Coverage will be confirmed with this claim." : `${settings.shopName} will review available service options.`}</small></div>
             <Link className="text-link" href={`/passport/${device.id}`}>← Back to device passport</Link>
           </aside>
           <section className="claim-form-card">

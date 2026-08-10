@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 
-export function LoginForm() {
+export function LoginForm({ shopName }: { shopName: string }) {
   const [email, setEmail] = useState(process.env.NODE_ENV === "development" ? "owner@lapmart.lk" : "");
   const [password, setPassword] = useState(process.env.NODE_ENV === "development" ? "devicepass" : "");
   const [error, setError] = useState("");
@@ -31,16 +31,16 @@ export function LoginForm() {
 
   return (
     <div className="login-form-wrap">
-      <div className="eyebrow">Shop workspace</div>
+      <div className="eyebrow">{shopName} workspace</div>
       <h2>Welcome back</h2>
-      <p className="login-intro">Sign in with your DevicePassport account. Customers never need an account to view a public passport.</p>
+      <p className="login-intro">Sign in with your staff account. Customers never need an account to view a public passport.</p>
       <form className="login-form" onSubmit={submit}>
         <label>Email address<input type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
         <label>Password<input type="password" required autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
         {error && <div className="error-box" role="alert">{error}</div>}
         <button className="button primary" type="submit" disabled={submitting}>{submitting ? "Signing in…" : "Sign in to dashboard"}</button>
       </form>
-      <div className="local-login-note"><strong>Local development</strong><span>Demo credentials are prefilled. Production requires environment credentials.</span></div>
+      <div className="local-login-note"><strong>Local development</strong><span>The seeded Owner account is prefilled. Additional staff accounts are managed inside the dashboard.</span></div>
     </div>
   );
 }

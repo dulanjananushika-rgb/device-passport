@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getSession } from "../lib/auth";
-import { listDevices, listWarrantyClaims } from "../lib/database";
+import { getShopSettings, listAuditEvents, listDevices, listStaffAccounts, listWarrantyClaims } from "../lib/database";
 import { Dashboard } from "./ui/Dashboard";
 
 export const metadata: Metadata = {
@@ -16,5 +16,15 @@ export default async function Home() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  return <Dashboard initialDevices={listDevices()} initialClaims={listWarrantyClaims()} userEmail={session.email} />;
+  const ownerData = session.role === "Owner";
+  return (
+    <Dashboard
+      initialDevices={listDevices()}
+      initialClaims={listWarrantyClaims()}
+      initialStaff={ownerData ? listStaffAccounts() : []}
+      initialAudit={ownerData ? listAuditEvents() : []}
+      initialSettings={getShopSettings()}
+      session={session}
+    />
+  );
 }

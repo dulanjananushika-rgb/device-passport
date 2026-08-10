@@ -1,20 +1,23 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
+import { authenticateStaff, findActiveStaffByEmail, findStaffById } from "./database";
+import type { StaffAccount, StaffRole } from "./operations";
 
 export const SESSION_COOKIE = "devicepassport_session";
 
 type SessionPayload = {
+  staffId?: string;
   email: string;
   expiresAt: number;
 };
 
-function configuredEmail() {
-  return process.env.DEVICEPASSPORT_ADMIN_EMAIL ?? (process.env.NODE_ENV === "production" ? "" : "owner@lapmart.lk");
-}
-
-function configuredPassword() {
-  return process.env.DEVICEPASSPORT_ADMIN_PASSWORD ?? (process.env.NODE_ENV === "production" ? "" : "devicepass");
-}
+export type StaffSession = {
+  id: string;
+  name: string;
+  email: string;
+  role: StaffRole;
+  expiresAt: number;
+};
 
 function sessionSecret() {
   return process.env.DEVICEPASSPORT_SESSION_SECRET ?? (process.env.NODE_ENV === "production" ? "" : "devicepassport-local-development-secret");
@@ -33,22 +36,20 @@ function sign(value: string) {
 }
 
 export function validateCredentials(email: string, password: string) {
-  const expectedEmail = configuredEmail();
-  const expectedPassword = configuredPassword();
-  if (!expectedEmail || !expectedPassword) return false;
-  return safeEqual(email.trim().toLowerCase(), expectedEmail.trim().toLowerCase()) && safeEqual(password, expectedPassword);
+  return authenticateStaff(email, password);
 }
 
-export function createSessionToken(email: string) {
+export function createSessionToken(staff: StaffAccount) {
   const payload: SessionPayload = {
-    email: email.trim().toLowerCase(),
+    staffId: staff.id,
+    email: staff.email,
     expiresAt: Date.now() + 12 * 60 * 60 * 1000,
   };
   const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
   return `${encoded}.${sign(encoded)}`;
 }
 
-export function verifySessionToken(token?: string | null): SessionPayload | null {
+function verifySessionToken(token?: string | null): SessionPayload | null {
   if (!token) return null;
   const [encoded, signature] = token.split(".");
   if (!encoded || !signature || !safeEqual(signature, sign(encoded))) return null;
@@ -62,7 +63,11 @@ export function verifySessionToken(token?: string | null): SessionPayload | null
   }
 }
 
-export async function getSession() {
+export async function getSession(): Promise<StaffSession | null> {
   const cookieStore = await cookies();
-  return verifySessionToken(cookieStore.get(SESSION_COOKIE)?.value);
+  const payload = verifySessionToken(cookieStore.get(SESSION_COOKIE)?.value);
+  if (!payload) return null;
+  const staff = payload.staffId ? findStaffById(payload.staffId) : findActiveStaffByEmail(payload.email);
+  if (!staff?.active || staff.email !== payload.email) return null;
+  return { id: staff.id, name: staff.name, email: staff.email, role: staff.role, expiresAt: payload.expiresAt };
 }

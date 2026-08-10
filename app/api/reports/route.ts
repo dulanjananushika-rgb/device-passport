@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { getSession } from "../../../lib/auth";
 import { createDeviceFromReport } from "../../../lib/database";
+import { canCreatePassports } from "../../../lib/operations";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!canCreatePassports(session.role)) return NextResponse.json({ error: "Your role cannot create device passports." }, { status: 403 });
 
   const payload = await request.json().catch(() => null);
   if (!payload?.report || typeof payload.report !== "object" || !payload.checks) {

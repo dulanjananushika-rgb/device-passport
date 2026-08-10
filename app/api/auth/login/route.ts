@@ -5,12 +5,13 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as { email?: string; password?: string } | null;
-  if (!body?.email || !body.password || !validateCredentials(body.email, body.password)) {
+  const staff = body?.email && body.password ? validateCredentials(body.email, body.password) : null;
+  if (!staff) {
     return NextResponse.json({ error: "Incorrect email or password." }, { status: 401 });
   }
 
   const response = NextResponse.json({ ok: true });
-  response.cookies.set(SESSION_COOKIE, createSessionToken(body.email), {
+  response.cookies.set(SESSION_COOKIE, createSessionToken(staff), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",

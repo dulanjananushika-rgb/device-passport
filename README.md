@@ -6,7 +6,8 @@ DevicePassport is an independent shop system for refurbished laptop health repor
 
 - Next.js 16 App Router on the standard Node.js runtime
 - React 19
-- App-owned signed HTTP-only sessions
+- App-owned signed HTTP-only sessions backed by salted scrypt staff passwords
+- Owner, Technician, and Support role permissions enforced by server APIs
 - Local SQLite database through Node's built-in `node:sqlite`
 - Three-step diagnostic import, technician inspection, and approval workflow
 - Photo evidence stored with each passport
@@ -14,6 +15,8 @@ DevicePassport is an independent shop system for refurbished laptop health repor
 - Account-free warranty claim submission with evidence photos
 - Private customer tracking links and a technician status timeline
 - Authenticated claims inbox for shop staff
+- Configurable shop branding, contact details, warranty defaults, and logo
+- Staff account management, password changes, and audit history
 - Windows PowerShell diagnostic collector
 
 ## Run locally
@@ -50,6 +53,14 @@ npm run smoke
 ```
 
 The smoke test removes its temporary device record when it finishes.
+
+## Shop administration
+
+- **Owner** can manage branding, warranty defaults, staff accounts, claims, and device tests.
+- **Technician** can create device passports and manage warranty claims.
+- **Support** can manage claims but cannot create passports or access staff administration.
+
+Use **Settings** to update the shop identity and your own password. Use **Staff** as an Owner to create accounts, change roles, reset passwords, disable access, and review the audit history. New passports use the configured warranty duration automatically.
 
 ## Warranty claim flow
 

@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { findPublicClaim } from "../../../lib/database";
+import { findPublicClaim, getShopSettings } from "../../../lib/database";
+import { ShopBrand } from "../../ui/ShopBrand";
 
 type TrackingPageProps = {
   params: Promise<{ token: string }>;
@@ -18,12 +19,13 @@ export default async function TrackingPage({ params }: TrackingPageProps) {
   const { token } = await params;
   const claim = findPublicClaim(token);
   if (!claim) notFound();
+  const settings = getShopSettings();
 
   return (
     <main className="tracking-page">
       <div className="tracking-wrap">
         <nav className="passport-nav">
-          <Link className="brand" href={`/passport/${claim.deviceId}`} style={{ color: "#123c2e", padding: 0 }}><span className="brand-mark">D</span><span className="brand-name">DevicePassport</span></Link>
+          <ShopBrand settings={settings} href={`/passport/${claim.deviceId}`} />
           <span className={`claim-status status-${claim.status.toLowerCase()}`}>{claim.status}</span>
         </nav>
 

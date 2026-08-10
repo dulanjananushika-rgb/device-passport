@@ -3,7 +3,9 @@
 import { ChangeEvent, useMemo, useState } from "react";
 import Image from "next/image";
 import type { DeviceRecord } from "../data/devices";
+import type { StaffSession } from "../../lib/auth";
 import { claimStatuses, type ClaimStatus, type WarrantyClaimSummary } from "../../lib/claims";
+import { staffRoles, type AuditEvent, type ShopSettings, type StaffAccount, type StaffRole } from "../../lib/operations";
 import {
   calculateInspectionScore,
   inspectionKeys,
@@ -15,7 +17,7 @@ import {
   type InspectionPhotoInput,
 } from "../../lib/inspection";
 
-type View = "overview" | "devices" | "warranties" | "reports";
+type View = "overview" | "devices" | "warranties" | "reports" | "staff" | "settings";
 type WizardStage = 1 | 2 | 3;
 
 const viewTitles: Record<View, { eyebrow: string; title: string }> = {
@@ -23,11 +25,25 @@ const viewTitles: Record<View, { eyebrow: string; title: string }> = {
   devices: { eyebrow: "Inventory", title: "Device passports" },
   warranties: { eyebrow: "After-sales", title: "Warranty claims" },
   reports: { eyebrow: "Performance", title: "Health reports" },
+  staff: { eyebrow: "Access control", title: "Staff accounts" },
+  settings: { eyebrow: "Configuration", title: "Shop settings" },
 };
 
-export function Dashboard({ initialDevices, initialClaims, userEmail }: { initialDevices: DeviceRecord[]; initialClaims: WarrantyClaimSummary[]; userEmail: string }) {
+type DashboardProps = {
+  initialDevices: DeviceRecord[];
+  initialClaims: WarrantyClaimSummary[];
+  initialStaff: StaffAccount[];
+  initialAudit: AuditEvent[];
+  initialSettings: ShopSettings;
+  session: StaffSession;
+};
+
+export function Dashboard({ initialDevices, initialClaims, initialStaff, initialAudit, initialSettings, session }: DashboardProps) {
   const [records, setRecords] = useState(initialDevices);
   const [claims, setClaims] = useState(initialClaims);
+  const [staff, setStaff] = useState(initialStaff);
+  const [audit, setAudit] = useState(initialAudit);
+  const [settings, setSettings] = useState(initialSettings);
   const [view, setView] = useState<View>("overview");
   const [query, setQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -143,12 +159,22 @@ export function Dashboard({ initialDevices, initialClaims, userEmail }: { initia
   const publishedCount = records.filter((device) => device.status === "Published").length;
   const reviewCount = records.filter((device) => device.status === "Needs review").length;
   const openClaimCount = claims.filter((claim) => claim.status !== "Completed" && claim.status !== "Rejected").length;
+  const canTestDevices = session.role === "Owner" || session.role === "Technician";
+  const isOwner = session.role === "Owner";
+
+  async function refreshAudit() {
+    if (!isOwner) return;
+    const response = await fetch("/api/audit");
+    if (!response.ok) return;
+    const result = await response.json();
+    setAudit(result.audit as AuditEvent[]);
+  }
 
   return (
     <div className="app-shell">
       <aside className="sidebar" aria-label="Main navigation">
         <button className="brand brand-button" onClick={() => setView("overview")}>
-          <span className="brand-mark">D</span><span className="brand-name">DevicePassport</span>
+          {settings.logoDataUrl ? <Image className="brand-logo-image" src={settings.logoDataUrl} alt="" width={32} height={32} unoptimized /> : <span className="brand-mark">{settings.shopName.slice(0, 1).toUpperCase()}</span>}<span className="brand-name">{settings.shopName}</span>
         </button>
 
         <div className="nav-label">Workspace</div>
@@ -157,17 +183,13 @@ export function Dashboard({ initialDevices, initialClaims, userEmail }: { initia
           <NavButton icon="D" label="Devices" active={view === "devices"} onClick={() => setView("devices")} />
           <NavButton icon="C" label="Claims" active={view === "warranties"} onClick={() => setView("warranties")} />
           <NavButton icon="R" label="Reports" active={view === "reports"} onClick={() => setView("reports")} />
-        </div>
-
-        <div className="nav-label">Manage</div>
-        <div className="nav-stack secondary">
-          <NavButton icon="T" label="Technicians" active={false} onClick={() => setView("reports")} />
-          <NavButton icon="S" label="Settings" active={false} onClick={() => setView("reports")} />
+          {isOwner && <NavButton icon="T" label="Staff" active={view === "staff"} onClick={() => setView("staff")} />}
+          <NavButton icon="S" label="Settings" active={view === "settings"} onClick={() => setView("settings")} />
         </div>
 
         <div className="sidebar-account">
-          <span className="avatar">LM</span>
-          <span className="account-copy"><strong>Lapmart</strong><span>{userEmail}</span></span>
+          <span className="avatar">{initials(session.name)}</span>
+          <span className="account-copy"><strong>{session.name}</strong><span>{session.role}</span></span>
           <button className="logout-button" onClick={signOut} title="Sign out" aria-label="Sign out">-&gt;</button>
         </div>
       </aside>
@@ -177,16 +199,18 @@ export function Dashboard({ initialDevices, initialClaims, userEmail }: { initia
           <div><div className="eyebrow">{title.eyebrow}</div><h1>{title.title}</h1></div>
           <div className="top-actions">
             <button className="icon-button" aria-label="Notifications">N{openClaimCount > 0 && <span className="notification-dot" />}</button>
-            <button className="button primary" onClick={() => setModalOpen(true)}>+ New device test</button>
+            {canTestDevices && <button className="button primary" onClick={() => setModalOpen(true)}>+ New device test</button>}
           </div>
         </header>
 
         {view === "overview" && (
-          <Overview records={records} publishedCount={publishedCount} reviewCount={reviewCount} openClaimCount={openClaimCount} onNewTest={() => setModalOpen(true)} onViewDevices={() => setView("devices")} />
+          <Overview records={records} publishedCount={publishedCount} reviewCount={reviewCount} openClaimCount={openClaimCount} canCreate={canTestDevices} onNewTest={() => setModalOpen(true)} onViewDevices={() => setView("devices")} />
         )}
-        {view === "devices" && <DeviceList devices={filteredDevices} query={query} onQuery={setQuery} onNewTest={() => setModalOpen(true)} />}
+        {view === "devices" && <DeviceList devices={filteredDevices} query={query} onQuery={setQuery} onNewTest={() => setModalOpen(true)} canCreate={canTestDevices} />}
         {view === "warranties" && <Warranties records={records} claims={claims} onClaimUpdate={(updated) => setClaims((current) => current.map((claim) => claim.id === updated.id ? updated : claim))} />}
         {view === "reports" && <Reports records={records} />}
+        {view === "staff" && isOwner && <StaffPanel staff={staff} audit={audit} currentStaffId={session.id} onStaffChange={setStaff} onAuditChange={refreshAudit} />}
+        {view === "settings" && <SettingsPanel settings={settings} session={session} onSettingsChange={setSettings} onAuditChange={refreshAudit} />}
       </main>
 
       {modalOpen && (
@@ -247,12 +271,12 @@ function NavButton({ icon, label, active, onClick }: { icon: string; label: stri
   return <button className={`nav-item ${active ? "active" : ""}`} onClick={onClick} aria-current={active ? "page" : undefined}><span className="nav-icon" aria-hidden="true">{icon}</span><span>{label}</span></button>;
 }
 
-function Overview({ records, publishedCount, reviewCount, openClaimCount, onNewTest, onViewDevices }: { records: DeviceRecord[]; publishedCount: number; reviewCount: number; openClaimCount: number; onNewTest: () => void; onViewDevices: () => void }) {
+function Overview({ records, publishedCount, reviewCount, openClaimCount, canCreate, onNewTest, onViewDevices }: { records: DeviceRecord[]; publishedCount: number; reviewCount: number; openClaimCount: number; canCreate: boolean; onNewTest: () => void; onViewDevices: () => void }) {
   const latest = records[0];
   return (
     <>
       <section className="hero">
-        <div className="hero-copy"><div className="hero-kicker">Trust, made visible</div><h2>Every refurbished laptop deserves proof.</h2><p>Run a consistent health test, publish a transparent device passport, and keep the warranty in one place from intake to after-sales.</p><div className="hero-actions"><button className="button primary" onClick={onNewTest}>+ Test a laptop</button>{latest && <a className="button secondary" href={`/passport/${latest.id}`}>View customer passport</a>}</div></div>
+        <div className="hero-copy"><div className="hero-kicker">Trust, made visible</div><h2>Every refurbished laptop deserves proof.</h2><p>Run a consistent health test, publish a transparent device passport, and keep the warranty in one place from intake to after-sales.</p><div className="hero-actions">{canCreate && <button className="button primary" onClick={onNewTest}>+ Test a laptop</button>}{latest && <a className="button secondary" href={`/passport/${latest.id}`}>View customer passport</a>}</div></div>
         {latest && <div className="hero-proof" aria-label="Latest verified device summary"><div className="proof-top"><div><div className="proof-label">Latest passport</div><div className="proof-device">{latest.name}</div></div><div className="grade-badge">{latest.grade}</div></div><div className="health-meter"><div className="health-row"><span>Overall health</span><strong>{latest.score} / 100</strong></div><div className="meter"><span style={{ width: `${latest.score}%` }} /></div></div><div className="proof-meta"><div><span>Battery</span><strong>{latest.batteryHealth}% health</strong></div><div><span>Storage</span><strong>{latest.storageHealth}% healthy</strong></div><div><span>Test ID</span><strong>{latest.id}</strong></div><div><span>Status</span><strong>{latest.status}</strong></div></div></div>}
       </section>
       <section className="stats" aria-label="Business summary"><Stat label="Total passports" value={String(records.length)} indicator="Live DB" /><Stat label="Published devices" value={String(publishedCount)} indicator={`${Math.round((publishedCount / Math.max(records.length, 1)) * 100)}%`} /><Stat label="Needs review" value={String(reviewCount)} indicator={reviewCount ? "Attention" : "Clear"} /><Stat label="Open claims" value={String(openClaimCount)} indicator={openClaimCount ? "Action needed" : "Clear"} /></section>
@@ -264,8 +288,8 @@ function Overview({ records, publishedCount, reviewCount, openClaimCount, onNewT
   );
 }
 
-function DeviceList({ devices, query, onQuery, onNewTest }: { devices: DeviceRecord[]; query: string; onQuery: (value: string) => void; onNewTest: () => void }) {
-  return <section className="page-section"><div className="section-head"><div><div className="eyebrow">{devices.length} records</div><h2>Device inventory</h2></div><div className="row-actions"><input className="search" value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Search name, serial or passport" aria-label="Search device passports" /><button className="button primary" onClick={onNewTest}>+ New test</button></div></div><div className="panel">{devices.length ? <DeviceTable devices={devices} /> : <div className="empty-state">No passports match &quot;{query}&quot;.</div>}</div></section>;
+function DeviceList({ devices, query, canCreate, onQuery, onNewTest }: { devices: DeviceRecord[]; query: string; canCreate: boolean; onQuery: (value: string) => void; onNewTest: () => void }) {
+  return <section className="page-section"><div className="section-head"><div><div className="eyebrow">{devices.length} records</div><h2>Device inventory</h2></div><div className="row-actions"><input className="search" value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Search name, serial or passport" aria-label="Search device passports" />{canCreate && <button className="button primary" onClick={onNewTest}>+ New test</button>}</div></div><div className="panel">{devices.length ? <DeviceTable devices={devices} /> : <div className="empty-state">No passports match &quot;{query}&quot;.</div>}</div></section>;
 }
 
 function Warranties({ records, claims, onClaimUpdate }: { records: DeviceRecord[]; claims: WarrantyClaimSummary[]; onClaimUpdate: (claim: WarrantyClaimSummary) => void }) {
@@ -367,6 +391,224 @@ function Warranties({ records, claims, onClaimUpdate }: { records: DeviceRecord[
 
 function formatClaimDate(value: string) {
   return new Date(value).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function StaffPanel({ staff, audit, currentStaffId, onStaffChange, onAuditChange }: { staff: StaffAccount[]; audit: AuditEvent[]; currentStaffId: string; onStaffChange: (staff: StaffAccount[]) => void; onAuditChange: () => Promise<void> }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<StaffRole>("Technician");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function createStaff() {
+    setSaving(true);
+    setError("");
+    const response = await fetch("/api/staff", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, email, role, password }),
+    });
+    const result = await response.json().catch(() => ({ error: "The server returned an invalid response." }));
+    if (!response.ok) {
+      setError(result.error ?? "The staff account could not be created.");
+      setSaving(false);
+      return;
+    }
+    onStaffChange([...staff, result.staff as StaffAccount]);
+    setName("");
+    setEmail("");
+    setRole("Technician");
+    setPassword("");
+    setSaving(false);
+    await onAuditChange();
+  }
+
+  return (
+    <section className="page-section staff-page">
+      <div className="section-head"><div><div className="eyebrow">{staff.filter((member) => member.active).length} active accounts</div><h2>Staff access control</h2></div></div>
+      <div className="staff-layout">
+        <div className="staff-main">
+          <section className="panel staff-create-card">
+            <div className="panel-head"><div><h3 className="panel-title">Invite a staff member</h3><p className="panel-subtitle">Create a secure shop-owned login</p></div></div>
+            <div className="staff-create-form">
+              <label>Full name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Technician name" /></label>
+              <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@yourshop.lk" /></label>
+              <label>Role<select value={role} onChange={(event) => setRole(event.target.value as StaffRole)}>{staffRoles.map((item) => <option key={item}>{item}</option>)}</select></label>
+              <label>Temporary password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Minimum 8 characters" /></label>
+            </div>
+            <div className="role-guide"><span><b>Owner</b> All settings</span><span><b>Technician</b> Tests + claims</span><span><b>Support</b> Claims only</span></div>
+            {error && <div className="error-box" role="alert">{error}</div>}
+            <button className="button primary" type="button" disabled={saving} onClick={createStaff}>{saving ? "Creating account…" : "+ Create staff account"}</button>
+          </section>
+
+          <section className="panel staff-list-card">
+            <div className="panel-head"><div><h3 className="panel-title">Team accounts</h3><p className="panel-subtitle">Roles are enforced by the API, not only the interface</p></div></div>
+            <div className="staff-list">{staff.map((member) => <StaffEditor key={member.id} member={member} isCurrent={member.id === currentStaffId} onUpdated={(updated) => { onStaffChange(staff.map((item) => item.id === updated.id ? updated : item)); void onAuditChange(); }} />)}</div>
+          </section>
+        </div>
+
+        <section className="panel audit-panel">
+          <div className="panel-head"><div><h3 className="panel-title">Audit history</h3><p className="panel-subtitle">Sensitive shop actions</p></div></div>
+          <div className="audit-list">{audit.length ? audit.map((event) => <article key={event.id}><span>{auditIcon(event.action)}</span><div><strong>{event.summary}</strong><small>{event.actor} • {formatClaimDate(event.createdAt)}</small></div></article>) : <div className="empty-state">No audit activity yet.</div>}</div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function StaffEditor({ member, isCurrent, onUpdated }: { member: StaffAccount; isCurrent: boolean; onUpdated: (staff: StaffAccount) => void }) {
+  const [name, setName] = useState(member.name);
+  const [role, setRole] = useState(member.role);
+  const [active, setActive] = useState(member.active);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    setError("");
+    const response = await fetch(`/api/staff/${encodeURIComponent(member.id)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, role, active, password }),
+    });
+    const result = await response.json().catch(() => ({ error: "The server returned an invalid response." }));
+    if (!response.ok) {
+      setError(result.error ?? "The staff account could not be updated.");
+      setSaving(false);
+      return;
+    }
+    setPassword("");
+    setSaving(false);
+    onUpdated(result.staff as StaffAccount);
+  }
+
+  return (
+    <article className={`staff-editor ${member.active ? "" : "inactive"}`}>
+      <div className="staff-identity"><span className="avatar">{initials(member.name)}</span><div><strong>{member.name}{isCurrent && <em>You</em>}</strong><small>{member.email}</small></div><span className={`staff-state ${member.active ? "active" : ""}`}>{member.active ? "Active" : "Disabled"}</span></div>
+      <div className="staff-editor-fields">
+        <label>Name<input value={name} onChange={(event) => setName(event.target.value)} /></label>
+        <label>Role<select value={role} onChange={(event) => setRole(event.target.value as StaffRole)}>{staffRoles.map((item) => <option key={item}>{item}</option>)}</select></label>
+        <label>Reset password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Leave empty to keep" /></label>
+        <label className="staff-active-toggle"><input type="checkbox" checked={active} disabled={isCurrent} onChange={(event) => setActive(event.target.checked)} /><span>Account enabled</span></label>
+      </div>
+      {error && <div className="error-box" role="alert">{error}</div>}
+      <button className="button secondary small" type="button" disabled={saving} onClick={save}>{saving ? "Saving…" : "Save account"}</button>
+    </article>
+  );
+}
+
+function SettingsPanel({ settings, session, onSettingsChange, onAuditChange }: { settings: ShopSettings; session: StaffSession; onSettingsChange: (settings: ShopSettings) => void; onAuditChange: () => Promise<void> }) {
+  const [form, setForm] = useState(settings);
+  const [settingsError, setSettingsError] = useState("");
+  const [settingsSuccess, setSettingsSuccess] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSuccess, setPasswordSuccess] = useState("");
+
+  function change<K extends keyof ShopSettings>(key: K, value: ShopSettings[K]) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function readLogo(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (file.size > 500 * 1024) {
+      setSettingsError("Shop logo must be 500 KB or smaller.");
+      return;
+    }
+    try {
+      const logo = await readImageData(file);
+      change("logoDataUrl", logo);
+    } catch (error) {
+      setSettingsError(error instanceof Error ? error.message : "The logo could not be read.");
+    }
+  }
+
+  async function saveSettings() {
+    setSaving(true);
+    setSettingsError("");
+    setSettingsSuccess("");
+    const response = await fetch("/api/settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(form) });
+    const result = await response.json().catch(() => ({ error: "The server returned an invalid response." }));
+    if (!response.ok) {
+      setSettingsError(result.error ?? "Shop settings could not be saved.");
+      setSaving(false);
+      return;
+    }
+    setForm(result.settings as ShopSettings);
+    onSettingsChange(result.settings as ShopSettings);
+    setSettingsSuccess("Shop branding and warranty defaults saved.");
+    setSaving(false);
+    await onAuditChange();
+  }
+
+  async function changePassword() {
+    setPasswordError("");
+    setPasswordSuccess("");
+    if (newPassword !== confirmPassword) {
+      setPasswordError("New passwords do not match.");
+      return;
+    }
+    const response = await fetch("/api/account/password", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ currentPassword, newPassword }) });
+    const result = await response.json().catch(() => ({ error: "The server returned an invalid response." }));
+    if (!response.ok) {
+      setPasswordError(result.error ?? "Password could not be changed.");
+      return;
+    }
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordSuccess("Password changed successfully.");
+    await onAuditChange();
+  }
+
+  return (
+    <section className="page-section settings-page">
+      <div className="section-head"><div><div className="eyebrow">Standalone configuration</div><h2>Brand and account settings</h2></div></div>
+      <div className="settings-layout">
+        <div className="settings-main">
+          <section className="panel settings-card">
+            <div className="panel-head"><div><h3 className="panel-title">Shop identity</h3><p className="panel-subtitle">Used on passports, claims, labels, and staff screens</p></div></div>
+            <div className="shop-logo-control"><div className="shop-logo-preview">{form.logoDataUrl ? <Image src={form.logoDataUrl} alt={`${form.shopName} logo`} width={80} height={80} unoptimized /> : <span>{form.shopName.slice(0, 1).toUpperCase()}</span>}</div><div><strong>Shop logo</strong><p>Square JPEG, PNG, or WebP up to 500 KB.</p>{session.role === "Owner" && <div className="row-actions"><label className="button secondary small">Upload logo<input className="file-input" type="file" accept="image/jpeg,image/png,image/webp" onChange={readLogo} /></label>{form.logoDataUrl && <button className="text-link danger-text" type="button" onClick={() => change("logoDataUrl", "")}>Remove</button>}</div>}</div></div>
+            {session.role === "Owner" ? <><div className="settings-fields"><label>Shop name<input value={form.shopName} onChange={(event) => change("shopName", event.target.value)} /></label><label>Tagline<input value={form.tagline} onChange={(event) => change("tagline", event.target.value)} /></label><label>Contact email<input type="email" value={form.contactEmail} onChange={(event) => change("contactEmail", event.target.value)} /></label><label>Phone number<input value={form.phone} onChange={(event) => change("phone", event.target.value)} /></label><label className="full-field">Address<textarea value={form.address} onChange={(event) => change("address", event.target.value)} /></label></div>{settingsError && <div className="error-box" role="alert">{settingsError}</div>}</> : <div className="settings-readonly"><strong>{settings.shopName}</strong><span>{settings.tagline}</span><span>{settings.contactEmail} • {settings.phone}</span><span>{settings.address}</span></div>}
+          </section>
+
+          {session.role === "Owner" && <section className="panel settings-card"><div className="panel-head"><div><h3 className="panel-title">Warranty defaults</h3><p className="panel-subtitle">Applied automatically to every new device passport</p></div></div><div className="settings-fields"><label>Coverage duration<select value={form.warrantyMonths} onChange={(event) => change("warrantyMonths", Number(event.target.value))}>{[1,3,6,12,18,24,36].map((months) => <option value={months} key={months}>{months} month{months === 1 ? "" : "s"}</option>)}</select></label><label className="full-field">Public warranty terms<textarea value={form.warrantyTerms} maxLength={1200} onChange={(event) => change("warrantyTerms", event.target.value)} /></label></div>{settingsSuccess && <div className="success-box">{settingsSuccess}</div>}<button className="button primary" type="button" disabled={saving} onClick={saveSettings}>{saving ? "Saving settings…" : "Save shop settings"}</button></section>}
+        </div>
+
+        <aside className="settings-side">
+          <section className="panel account-card"><div className="account-card-head"><span className="avatar large">{initials(session.name)}</span><div><strong>{session.name}</strong><span>{session.email}</span><em>{session.role}</em></div></div><h3>Change my password</h3><div className="account-password-fields"><label>Current password<input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label><label>New password<input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="Minimum 8 characters" /></label><label>Confirm password<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label></div>{passwordError && <div className="error-box" role="alert">{passwordError}</div>}{passwordSuccess && <div className="success-box">{passwordSuccess}</div>}<button className="button secondary" type="button" onClick={changePassword}>Change password</button></section>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function auditIcon(action: string) {
+  if (action.startsWith("staff")) return "U";
+  if (action.startsWith("settings")) return "S";
+  if (action.startsWith("claim")) return "C";
+  if (action.startsWith("passport")) return "D";
+  return "A";
+}
+
+function readImageData(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
+    reader.readAsDataURL(file);
+  });
+}
+
+function initials(value: string) {
+  return value.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "DP";
 }
 
 function Reports({ records }: { records: DeviceRecord[] }) {

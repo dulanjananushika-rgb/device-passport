@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { findDevice, getPassportEvidence, isWarrantyActive } from "../../../lib/database";
+import { findDevice, getPassportEvidence, getShopSettings, isWarrantyActive } from "../../../lib/database";
 import { inspectionKeys, inspectionLabels, type CheckStatus } from "../../../lib/inspection";
 import { QrCode } from "../../ui/QrCode";
+import { ShopBrand } from "../../ui/ShopBrand";
 
 type PassportPageProps = {
   params: Promise<{ id: string }>;
@@ -25,15 +26,14 @@ export default async function PassportPage({ params }: PassportPageProps) {
   const device = findDevice(id);
   if (!device) notFound();
   const evidence = getPassportEvidence(device.id);
+  const settings = getShopSettings();
   const warrantyActive = isWarrantyActive(device.warrantyEnds);
 
   return (
     <main className="passport-page">
       <div className="passport-wrap">
         <nav className="passport-nav">
-          <Link className="brand" href="/" style={{ color: "#123c2e", padding: 0 }}>
-            <span className="brand-mark">D</span><span className="brand-name">DevicePassport</span>
-          </Link>
+          <ShopBrand settings={settings} />
           <span className="verified-chip">Report integrity verified</span>
         </nav>
 
@@ -124,9 +124,10 @@ export default async function PassportPage({ params }: PassportPageProps) {
                 <div className="meter"><span style={{ width: warrantyActive ? "72%" : "0%" }} /></div>
                 <small>{warrantyActive ? "Hardware coverage from the verified seller" : "Service requests remain available for shop review"}</small>
               </div>
+              <p className="warranty-public-terms">{settings.warrantyTerms}</p>
               <div className="seller-card">
-                <strong>Sold and verified by Lapmart</strong>
-                <span>Verified DevicePassport partner • Colombo, Sri Lanka</span>
+                <strong>Sold and verified by {settings.shopName}</strong>
+                <span>{settings.address} • {settings.phone}</span>
               </div>
               <Link className="button primary" href={`/passport/${device.id}/claim`} style={{ width: "100%", marginTop: 13 }}>Start warranty claim</Link>
             </aside>

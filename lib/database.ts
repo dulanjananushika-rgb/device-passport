@@ -18,6 +18,14 @@ import {
   type WarrantyClaimInput,
   type WarrantyClaimSummary,
 } from "./claims";
+import { hashPassword, verifyPassword } from "./passwords";
+import {
+  isStaffRole,
+  type AuditEvent,
+  type ShopSettings,
+  type StaffAccount,
+  type StaffRole,
+} from "./operations";
 
 type DeviceRow = {
   id: string;
@@ -82,6 +90,36 @@ type ClaimEventRow = {
   created_at: string;
 };
 
+type StaffRow = {
+  id: string;
+  name: string;
+  email: string;
+  role: StaffRole;
+  password_hash: string;
+  active: number;
+  created_at: string;
+  updated_at: string;
+};
+
+type SettingsRow = {
+  shop_name: string;
+  tagline: string;
+  contact_email: string;
+  phone: string;
+  address: string;
+  warranty_months: number;
+  warranty_terms: string;
+  logo_data_url: string;
+};
+
+type AuditRow = {
+  id: string;
+  actor: string;
+  action: string;
+  summary: string;
+  created_at: string;
+};
+
 export type PassportEvidence = {
   checks: InspectionChecks;
   notes: string;
@@ -136,9 +174,67 @@ function ensureClaimSchema(database: DatabaseSync) {
   `);
 }
 
+function ensureOperationsSchema(database: DatabaseSync) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS shop_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      shop_name TEXT NOT NULL,
+      tagline TEXT NOT NULL,
+      contact_email TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      address TEXT NOT NULL,
+      warranty_months INTEGER NOT NULL,
+      warranty_terms TEXT NOT NULL,
+      logo_data_url TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS staff_users (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      role TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id TEXT PRIMARY KEY,
+      actor TEXT NOT NULL,
+      action TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_staff_users_email ON staff_users(email);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_created ON audit_events(created_at);
+  `);
+
+  const now = new Date().toISOString();
+  database.prepare(`
+    INSERT OR IGNORE INTO shop_settings (
+      id, shop_name, tagline, contact_email, phone, address,
+      warranty_months, warranty_terms, logo_data_url, updated_at
+    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, '', ?)
+  `).run("Lapmart", "Verified refurbished devices", "support@lapmart.lk", "+94 11 234 5678", "Colombo, Sri Lanka", 6, "Hardware faults are covered during the stated warranty period. Physical and liquid damage are excluded.", now);
+
+  const staffCount = database.prepare("SELECT COUNT(*) AS count FROM staff_users").get() as { count: number };
+  if (staffCount.count === 0) {
+    const development = process.env.NODE_ENV !== "production";
+    const email = (process.env.DEVICEPASSPORT_ADMIN_EMAIL ?? (development ? "owner@lapmart.lk" : "")).trim().toLowerCase();
+    const password = process.env.DEVICEPASSPORT_ADMIN_PASSWORD ?? (development ? "devicepass" : "");
+    if (email && password) {
+      database.prepare(`
+        INSERT INTO staff_users (id, name, email, role, password_hash, active, created_at, updated_at)
+        VALUES (?, 'Shop Owner', ?, 'Owner', ?, 1, ?, ?)
+      `).run(randomUUID(), email, hashPassword(password), now, now);
+    }
+  }
+}
+
 function getDatabase() {
   if (globalDatabase.devicePassportDb) {
     ensureClaimSchema(globalDatabase.devicePassportDb);
+    ensureOperationsSchema(globalDatabase.devicePassportDb);
     return globalDatabase.devicePassportDb;
   }
 
@@ -195,6 +291,7 @@ function getDatabase() {
     );
   `);
   ensureClaimSchema(database);
+  ensureOperationsSchema(database);
 
   const insert = database.prepare(`
     INSERT OR IGNORE INTO devices (
@@ -242,6 +339,143 @@ function rowToDevice(row: DeviceRow): DeviceRecord {
     warrantyEnds: row.warranty_ends,
     status: row.status,
   };
+}
+
+function rowToStaff(row: StaffRow): StaffAccount {
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    active: Boolean(row.active),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToSettings(row: SettingsRow): ShopSettings {
+  return {
+    shopName: row.shop_name,
+    tagline: row.tagline,
+    contactEmail: row.contact_email,
+    phone: row.phone,
+    address: row.address,
+    warrantyMonths: row.warranty_months,
+    warrantyTerms: row.warranty_terms,
+    logoDataUrl: row.logo_data_url,
+  };
+}
+
+function readShopSettings(database: DatabaseSync) {
+  return rowToSettings(database.prepare("SELECT * FROM shop_settings WHERE id = 1").get() as unknown as SettingsRow);
+}
+
+export function getShopSettings(): ShopSettings {
+  return readShopSettings(getDatabase());
+}
+
+export function updateShopSettings(settings: ShopSettings, actor: string): ShopSettings {
+  const shopName = settings.shopName.trim();
+  const tagline = settings.tagline.trim();
+  const contactEmail = settings.contactEmail.trim().toLowerCase();
+  const phone = settings.phone.trim();
+  const address = settings.address.trim();
+  const warrantyTerms = settings.warrantyTerms.trim();
+  const warrantyMonths = Math.round(Number(settings.warrantyMonths));
+  const logoDataUrl = validateLogo(settings.logoDataUrl);
+  if (shopName.length < 2 || shopName.length > 80) throw new Error("Shop name must contain 2 to 80 characters.");
+  if (tagline.length > 120) throw new Error("Tagline must be 120 characters or fewer.");
+  if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) throw new Error("Enter a valid shop email address.");
+  if (phone.length > 40 || address.length > 240) throw new Error("Shop contact details are too long.");
+  if (!Number.isInteger(warrantyMonths) || warrantyMonths < 1 || warrantyMonths > 36) throw new Error("Warranty duration must be between 1 and 36 months.");
+  if (!warrantyTerms || warrantyTerms.length > 1200) throw new Error("Warranty terms are required and must be 1200 characters or fewer.");
+
+  const database = getDatabase();
+  database.prepare(`
+    UPDATE shop_settings SET shop_name = ?, tagline = ?, contact_email = ?, phone = ?, address = ?,
+      warranty_months = ?, warranty_terms = ?, logo_data_url = ?, updated_at = ? WHERE id = 1
+  `).run(shopName, tagline, contactEmail, phone, address, warrantyMonths, warrantyTerms, logoDataUrl, new Date().toISOString());
+  recordAuditEvent(actor, "settings.updated", `Updated branding and warranty settings for ${shopName}.`);
+  return readShopSettings(database);
+}
+
+export function listStaffAccounts(): StaffAccount[] {
+  const rows = getDatabase().prepare("SELECT * FROM staff_users ORDER BY active DESC, role, name").all() as unknown as StaffRow[];
+  return rows.map(rowToStaff);
+}
+
+export function findStaffById(id: string): StaffAccount | null {
+  const row = getDatabase().prepare("SELECT * FROM staff_users WHERE id = ?").get(id) as unknown as StaffRow | undefined;
+  return row ? rowToStaff(row) : null;
+}
+
+export function findActiveStaffByEmail(email: string): StaffAccount | null {
+  const row = getDatabase().prepare("SELECT * FROM staff_users WHERE email = ? AND active = 1").get(email.trim().toLowerCase()) as unknown as StaffRow | undefined;
+  return row ? rowToStaff(row) : null;
+}
+
+export function authenticateStaff(email: string, password: string): StaffAccount | null {
+  const normalized = email.trim().toLowerCase();
+  const row = getDatabase().prepare("SELECT * FROM staff_users WHERE email = ? AND active = 1").get(normalized) as unknown as StaffRow | undefined;
+  return row && verifyPassword(password, row.password_hash) ? rowToStaff(row) : null;
+}
+
+export function createStaffAccount(input: { name: string; email: string; role: StaffRole; password: string }, actor: string): StaffAccount {
+  const name = input.name.trim();
+  const email = input.email.trim().toLowerCase();
+  if (name.length < 2 || name.length > 100) throw new Error("Staff name must contain 2 to 100 characters.");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Enter a valid staff email address.");
+  if (!isStaffRole(input.role)) throw new Error("Choose a valid staff role.");
+  if (input.password.length < 8 || input.password.length > 128) throw new Error("Temporary password must contain 8 to 128 characters.");
+  const database = getDatabase();
+  const existing = database.prepare("SELECT id FROM staff_users WHERE email = ?").get(email);
+  if (existing) throw new Error("A staff account already exists for this email address.");
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  database.prepare(`
+    INSERT INTO staff_users (id, name, email, role, password_hash, active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+  `).run(id, name, email, input.role, hashPassword(input.password), now, now);
+  recordAuditEvent(actor, "staff.created", `Created ${input.role} account for ${email}.`);
+  return findStaffById(id) as StaffAccount;
+}
+
+export function updateStaffAccount(id: string, input: { name: string; role: StaffRole; active: boolean }, actor: string): StaffAccount {
+  const database = getDatabase();
+  const current = database.prepare("SELECT * FROM staff_users WHERE id = ?").get(id) as unknown as StaffRow | undefined;
+  if (!current) throw new Error("Staff account not found.");
+  const name = input.name.trim();
+  if (name.length < 2 || name.length > 100) throw new Error("Staff name must contain 2 to 100 characters.");
+  if (!isStaffRole(input.role)) throw new Error("Choose a valid staff role.");
+  if (current.role === "Owner" && current.active && (input.role !== "Owner" || !input.active)) {
+    const ownerCount = database.prepare("SELECT COUNT(*) AS count FROM staff_users WHERE role = 'Owner' AND active = 1").get() as { count: number };
+    if (ownerCount.count <= 1) throw new Error("The last active Owner account cannot be disabled or reassigned.");
+  }
+  database.prepare("UPDATE staff_users SET name = ?, role = ?, active = ?, updated_at = ? WHERE id = ?")
+    .run(name, input.role, input.active ? 1 : 0, new Date().toISOString(), id);
+  recordAuditEvent(actor, "staff.updated", `${input.active ? "Updated" : "Disabled"} ${current.email} as ${input.role}.`);
+  return findStaffById(id) as StaffAccount;
+}
+
+export function changeStaffPassword(id: string, password: string, actor: string) {
+  if (password.length < 8 || password.length > 128) throw new Error("New password must contain 8 to 128 characters.");
+  const database = getDatabase();
+  const current = database.prepare("SELECT email FROM staff_users WHERE id = ?").get(id) as { email: string } | undefined;
+  if (!current) throw new Error("Staff account not found.");
+  database.prepare("UPDATE staff_users SET password_hash = ?, updated_at = ? WHERE id = ?")
+    .run(hashPassword(password), new Date().toISOString(), id);
+  recordAuditEvent(actor, "account.password", `Changed password for ${current.email}.`);
+}
+
+export function listAuditEvents(limit = 60): AuditEvent[] {
+  const safeLimit = Math.max(1, Math.min(100, Math.round(limit)));
+  const rows = getDatabase().prepare("SELECT * FROM audit_events ORDER BY created_at DESC, id DESC LIMIT ?").all(safeLimit) as unknown as AuditRow[];
+  return rows.map((row) => ({ id: row.id, actor: row.actor, action: row.action, summary: row.summary, createdAt: row.created_at }));
+}
+
+export function recordAuditEvent(actor: string, action: string, summary: string) {
+  getDatabase().prepare("INSERT INTO audit_events (id, actor, action, summary, created_at) VALUES (?, ?, ?, ?, ?)")
+    .run(randomUUID(), actor, action, summary.slice(0, 500), new Date().toISOString());
 }
 
 export function listDevices(): DeviceRecord[] {
@@ -353,12 +587,15 @@ export function createWarrantyClaim(deviceId: string, input: WarrantyClaimInput)
     throw error;
   }
 
+  recordAuditEvent("Customer", "claim.created", `Submitted ${input.category} claim ${claimId} for ${deviceRow.id}.`);
+
   const row = database.prepare(`${claimSummarySql} WHERE c.id = ?`).get(claimId) as unknown as ClaimRow;
   return rowToClaimSummary(row);
 }
 
 export function findPublicClaim(trackingToken: string): PublicWarrantyClaim | null {
   const database = getDatabase();
+  const shopSettings = readShopSettings(database);
   const row = database.prepare(`${claimSummarySql} WHERE c.tracking_token = ?`).get(trackingToken) as unknown as ClaimRow | undefined;
   if (!row) return null;
   const photos = database.prepare("SELECT id, name, mime_type FROM claim_photos WHERE claim_id = ? ORDER BY created_at, id").all(row.id) as unknown as PhotoRow[];
@@ -372,7 +609,7 @@ export function findPublicClaim(trackingToken: string): PublicWarrantyClaim | nu
     id: event.id,
     status: event.status,
     note: event.note,
-    actor: event.actor === "Customer" ? "Customer" : "Lapmart support",
+    actor: event.actor === "Customer" ? "Customer" : `${shopSettings.shopName} support`,
     createdAt: event.created_at,
   }));
   return {
@@ -409,6 +646,8 @@ export function updateWarrantyClaimStatus(claimId: string, status: ClaimStatus, 
     database.exec("ROLLBACK");
     throw error;
   }
+
+  recordAuditEvent(actor, "claim.status", `Changed ${claimId} to ${status}.`);
 
   const row = database.prepare(`${claimSummarySql} WHERE c.id = ?`).get(claimId) as unknown as ClaimRow;
   return rowToClaimSummary(row);
@@ -450,8 +689,9 @@ export function createDeviceFromReport(
   const scoring = calculateInspectionScore(report, checks);
   const firstDisk = report.storage?.[0];
   const testedDate = report.collectedAt ? new Date(report.collectedAt) : new Date();
+  const shopSettings = readShopSettings(database);
   const warrantyDate = new Date();
-  warrantyDate.setMonth(warrantyDate.getMonth() + 6);
+  warrantyDate.setMonth(warrantyDate.getMonth() + shopSettings.warrantyMonths);
 
   const device: DeviceRecord = {
     id: `DVP-LK-${new Date().toISOString().slice(2, 10).replaceAll("-", "")}-${randomUUID().slice(0, 4).toUpperCase()}`,
@@ -494,7 +734,18 @@ export function createDeviceFromReport(
     throw error;
   }
 
+  recordAuditEvent(technician, "passport.created", `Published ${device.id} for serial ${device.serial}.`);
+
   return device;
+}
+
+function validateLogo(value: string) {
+  if (!value) return "";
+  if (typeof value !== "string") throw new Error("Shop logo must be a valid image.");
+  const match = /^data:image\/(?:jpeg|png|webp);base64,([a-zA-Z0-9+/=]+)$/.exec(value);
+  if (!match) throw new Error("Shop logo must be a JPEG, PNG, or WebP image.");
+  if (Buffer.from(match[1], "base64").byteLength > 500 * 1024) throw new Error("Shop logo must be 500 KB or smaller.");
+  return value;
 }
 
 function parsePhoto(photo: InspectionPhotoInput) {
