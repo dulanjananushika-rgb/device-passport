@@ -1,23 +1,21 @@
 "use client";
 
 import { ChangeEvent, useMemo, useState } from "react";
+import Image from "next/image";
 import type { DeviceRecord } from "../data/devices";
+import {
+  calculateInspectionScore,
+  inspectionKeys,
+  inspectionLabels,
+  type CheckStatus,
+  type DiagnosticReport,
+  type InspectionChecks,
+  type InspectionKey,
+  type InspectionPhotoInput,
+} from "../../lib/inspection";
 
 type View = "overview" | "devices" | "warranties" | "reports";
-
-type DiagnosticImport = {
-  reportVersion?: string;
-  collectedAt?: string;
-  device?: {
-    manufacturer?: string;
-    model?: string;
-    serialNumber?: string;
-    processor?: string;
-    memoryGB?: number;
-  };
-  battery?: { healthPercent?: number };
-  storage?: Array<{ model?: string; healthStatus?: string; sizeGB?: number }>;
-};
+type WizardStage = 1 | 2 | 3;
 
 const viewTitles: Record<View, { eyebrow: string; title: string }> = {
   overview: { eyebrow: "Operations", title: "Shop overview" },
@@ -31,9 +29,20 @@ export function Dashboard({ initialDevices, userEmail }: { initialDevices: Devic
   const [view, setView] = useState<View>("overview");
   const [query, setQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
-  const [imported, setImported] = useState<DiagnosticImport | null>(null);
+  const [stage, setStage] = useState<WizardStage>(1);
+  const [imported, setImported] = useState<DiagnosticReport | null>(null);
+  const [checks, setChecks] = useState<Partial<Record<InspectionKey, CheckStatus>>>({});
+  const [notes, setNotes] = useState("");
+  const [photos, setPhotos] = useState<InspectionPhotoInput[]>([]);
+  const [approved, setApproved] = useState(false);
+  const [createdDevice, setCreatedDevice] = useState<DeviceRecord | null>(null);
   const [importError, setImportError] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const checksComplete = inspectionKeys.every((key) => checks[key] === "pass" || checks[key] === "fail");
+  const scorePreview = imported && checksComplete
+    ? calculateInspectionScore(imported, checks as InspectionChecks)
+    : null;
 
   const filteredDevices = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -50,11 +59,12 @@ export function Dashboard({ initialDevices, userEmail }: { initialDevices: Devic
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const parsed = JSON.parse(String(reader.result)) as DiagnosticImport;
+        const parsed = JSON.parse(String(reader.result)) as DiagnosticReport;
         if (!parsed.device?.serialNumber || !parsed.device?.model) {
           throw new Error("The report is missing a device model or serial number.");
         }
         setImported(parsed);
+        setStage(2);
       } catch (error) {
         setImported(null);
         setImportError(error instanceof Error ? error.message : "This report could not be read.");
@@ -63,21 +73,52 @@ export function Dashboard({ initialDevices, userEmail }: { initialDevices: Devic
     reader.readAsText(file);
   }
 
+  function setCheck(key: InspectionKey, status: CheckStatus) {
+    setChecks((current) => ({ ...current, [key]: status }));
+  }
+
+  async function handlePhotos(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    setImportError("");
+    if (files.length + photos.length > 4) {
+      setImportError("A maximum of four evidence photos is allowed.");
+      return;
+    }
+    const tooLarge = files.find((file) => file.size > 2 * 1024 * 1024);
+    if (tooLarge) {
+      setImportError(`${tooLarge.name} is larger than 2 MB.`);
+      return;
+    }
+    const encoded = await Promise.all(files.map((file) => readPhoto(file)));
+    setPhotos((current) => [...current, ...encoded]);
+    event.target.value = "";
+  }
+
+  function removePhoto(index: number) {
+    setPhotos((current) => current.filter((_, photoIndex) => photoIndex !== index));
+  }
+
   function closeModal() {
     if (saving) return;
     setModalOpen(false);
+    setStage(1);
     setImported(null);
+    setChecks({});
+    setNotes("");
+    setPhotos([]);
+    setApproved(false);
+    setCreatedDevice(null);
     setImportError("");
   }
 
   async function publishPassport() {
-    if (!imported) return;
+    if (!imported || !checksComplete || !approved) return;
     setSaving(true);
     setImportError("");
     const response = await fetch("/api/reports", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(imported),
+      body: JSON.stringify({ report: imported, checks, notes, photos }),
     });
     const result = await response.json().catch(() => ({ error: "The server returned an invalid response." }));
     if (!response.ok) {
@@ -87,9 +128,8 @@ export function Dashboard({ initialDevices, userEmail }: { initialDevices: Devic
     }
 
     setRecords((current) => [result.device as DeviceRecord, ...current]);
+    setCreatedDevice(result.device as DeviceRecord);
     setSaving(false);
-    closeModal();
-    setView("devices");
   }
 
   async function signOut() {
@@ -150,41 +190,54 @@ export function Dashboard({ initialDevices, userEmail }: { initialDevices: Devic
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closeModal()}>
           <section className="modal" role="dialog" aria-modal="true" aria-labelledby="new-test-title">
             <div className="modal-head">
-              <div><div className="eyebrow">Device intake</div><h2 id="new-test-title">Create a verified passport</h2></div>
+              <div><div className="eyebrow">Technician workflow</div><h2 id="new-test-title">{createdDevice ? "Passport ready" : "Create a verified passport"}</h2></div>
               <button className="close-button" onClick={closeModal} aria-label="Close dialog">x</button>
             </div>
-            <div className="stepper" aria-label="Passport creation progress">
-              <div className="step active" data-step="1">Import</div>
-              <div className={`step ${imported ? "active" : ""}`} data-step="2">Review</div>
-              <div className={`step ${saving ? "active" : ""}`} data-step="3">Publish</div>
-            </div>
-            <div className="modal-body">
-              {imported ? (
-                <div className="import-success">
-                  <h3>Diagnostic report imported</h3>
-                  <div className="import-grid">
-                    <div><span>Device</span><strong>{imported.device?.manufacturer} {imported.device?.model}</strong></div>
-                    <div><span>Serial</span><strong>{imported.device?.serialNumber}</strong></div>
-                    <div><span>Memory</span><strong>{imported.device?.memoryGB ?? "-"} GB</strong></div>
-                    <div><span>Battery health</span><strong>{imported.battery?.healthPercent ?? "-"}%</strong></div>
-                  </div>
+            {!createdDevice && <div className="stepper" aria-label="Passport creation progress"><div className={`step ${stage >= 1 ? "active" : ""}`} data-step="1">Import</div><div className={`step ${stage >= 2 ? "active" : ""}`} data-step="2">Inspect</div><div className={`step ${stage >= 3 ? "active" : ""}`} data-step="3">Approve</div></div>}
+            <div className="modal-body wizard-body">
+              {createdDevice ? (
+                <div className="publish-success"><span className="publish-check">OK</span><div className="eyebrow">Published successfully</div><h3>{createdDevice.name}</h3><p>{createdDevice.id} is saved with a Grade {createdDevice.grade} health score of {createdDevice.score}/100.</p><div className="publish-actions"><a className="button secondary" href={`/passport/${createdDevice.id}`}>Open public passport</a><a className="button primary" href={`/label/${createdDevice.id}`}>Print QR label</a></div></div>
+              ) : stage === 1 ? (
+                <label className="drop-zone"><span><span className="drop-icon">JSON</span><h3>Import the Windows health report</h3><p>Run the DevicePassport collector on the laptop, then select its generated report.</p><span className="button secondary small">Choose report</span><input className="file-input" type="file" accept="application/json,.json" onChange={handleImport} /></span></label>
+              ) : stage === 2 && imported ? (
+                <div className="wizard-section">
+                  <div className="import-success compact"><h3>Automatic report connected</h3><div className="import-grid"><div><span>Device</span><strong>{imported.device?.manufacturer} {imported.device?.model}</strong></div><div><span>Serial</span><strong>{imported.device?.serialNumber}</strong></div><div><span>Memory</span><strong>{imported.device?.memoryGB ?? "-"} GB</strong></div><div><span>Battery</span><strong>{imported.battery?.healthPercent ?? "-"}%</strong></div></div></div>
+                  <div className="wizard-title"><div><h3>Manual hardware inspection</h3><p>Test every item and record the actual result.</p></div><span>{Object.keys(checks).length}/{inspectionKeys.length} complete</span></div>
+                  <div className="inspection-list">{inspectionKeys.map((key) => <InspectionControl key={key} checkKey={key} value={checks[key]} onChange={setCheck} />)}</div>
+                  <label className="notes-field">Technician notes<textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Cosmetic marks, replaced parts, or anything the buyer should know" maxLength={800} /></label>
                 </div>
-              ) : (
-                <label className="drop-zone">
-                  <span><span className="drop-icon">JSON</span><h3>Import the Windows health report</h3><p>Run the DevicePassport collector on the laptop, then select the generated JSON file here.</p><span className="button secondary small">Choose report</span><input className="file-input" type="file" accept="application/json,.json" onChange={handleImport} /></span>
-                </label>
-              )}
+              ) : imported && scorePreview ? (
+                <div className="wizard-section">
+                  <div className="score-preview"><div><div className="eyebrow">Calculated result</div><strong>{scorePreview.score}<small>/100</small></strong><span>{scorePreview.needsReview ? "Needs technician review" : "Ready to publish"}</span></div><div className="grade-badge preview-grade">{scorePreview.grade}</div></div>
+                  <div className="score-breakdown"><div><span>Battery</span><strong>{scorePreview.batteryHealth}%</strong></div><div><span>Storage</span><strong>{scorePreview.storageHealth}%</strong></div><div><span>Manual checks</span><strong>{scorePreview.manualScore}%</strong></div></div>
+                  <div className="photo-section"><div className="wizard-title"><div><h3>Photo evidence</h3><p>Add up to four JPEG, PNG, or WebP photos. Maximum 2 MB each.</p></div><span>{photos.length}/4</span></div><div className="photo-grid">{photos.map((photo, index) => <div className="photo-preview" key={`${photo.name}-${index}`}><Image src={photo.dataUrl} alt={photo.name} width={160} height={100} unoptimized /><button type="button" onClick={() => removePhoto(index)} aria-label={`Remove ${photo.name}`}>x</button><span>{photo.name}</span></div>)}{photos.length < 4 && <label className="photo-add">+<span>Add photos</span><input className="file-input" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={handlePhotos} /></label>}</div></div>
+                  <label className="approval-check"><input type="checkbox" checked={approved} onChange={(event) => setApproved(event.target.checked)} /><span><strong>I approve this inspection</strong><small>I confirm the automatic report and manual checks match this physical device.</small></span></label>
+                </div>
+              ) : null}
               {importError && <div className="error-box" role="alert">{importError}</div>}
             </div>
             <div className="modal-foot">
-              <button className="button secondary" onClick={closeModal} disabled={saving}>Cancel</button>
-              <button className="button primary" disabled={!imported || saving} onClick={publishPassport}>{saving ? "Saving passport..." : "Create passport"}</button>
+              {createdDevice ? <><button className="button secondary" onClick={() => { closeModal(); setView("devices"); }}>Done</button><a className="button primary" href={`/label/${createdDevice.id}`}>Print label</a></> : <><button className="button secondary" onClick={stage === 1 ? closeModal : () => setStage((stage - 1) as WizardStage)} disabled={saving}>{stage === 1 ? "Cancel" : "Back"}</button>{stage < 3 ? <button className="button primary" disabled={stage === 1 ? !imported : !checksComplete} onClick={() => setStage((stage + 1) as WizardStage)}>Continue</button> : <button className="button primary" disabled={!approved || saving} onClick={publishPassport}>{saving ? "Saving passport..." : "Approve & publish"}</button>}</>}
             </div>
           </section>
         </div>
       )}
     </div>
   );
+}
+
+function InspectionControl({ checkKey, value, onChange }: { checkKey: InspectionKey; value?: CheckStatus; onChange: (key: InspectionKey, status: CheckStatus) => void }) {
+  const copy = inspectionLabels[checkKey];
+  return <div className="inspection-control"><div><strong>{copy.label}</strong><span>{copy.hint}</span></div><div className="check-options"><button type="button" className={value === "pass" ? "selected pass" : ""} onClick={() => onChange(checkKey, "pass")}>Pass</button><button type="button" className={value === "fail" ? "selected fail" : ""} onClick={() => onChange(checkKey, "fail")}>Fail</button></div></div>;
+}
+
+function readPhoto(file: File): Promise<InspectionPhotoInput> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({ name: file.name, dataUrl: String(reader.result) });
+    reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
+    reader.readAsDataURL(file);
+  });
 }
 
 function NavButton({ icon, label, active, onClick }: { icon: string; label: string; active: boolean; onClick: () => void }) {

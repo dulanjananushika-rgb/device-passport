@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
-import { findDevice } from "../../../lib/database";
-import { QrCode } from "../../ui/QrCode";
-import { notFound } from "next/navigation";
+import Image from "next/image";
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import { findDevice, getPassportEvidence } from "../../../lib/database";
+import { inspectionKeys, inspectionLabels, type CheckStatus } from "../../../lib/inspection";
+import { QrCode } from "../../ui/QrCode";
 
 type PassportPageProps = {
   params: Promise<{ id: string }>;
@@ -22,6 +24,7 @@ export default async function PassportPage({ params }: PassportPageProps) {
   const { id } = await params;
   const device = findDevice(id);
   if (!device) notFound();
+  const evidence = getPassportEvidence(device.id);
 
   return (
     <main className="passport-page">
@@ -40,20 +43,62 @@ export default async function PassportPage({ params }: PassportPageProps) {
               <h1>{device.name}</h1>
               <p>{device.id} • Serial {device.serial} • Tested {device.testedAt}</p>
             </div>
-            <div className="passport-score"><strong>{device.score}</strong><span>Health score</span></div>
+            <div className="passport-score">
+              <strong>{device.score}</strong>
+              <span>Grade {device.grade} health</span>
+            </div>
           </header>
 
           <div className="passport-body">
             <section className="passport-main">
               <h2 className="section-title">Verified hardware checks</h2>
               <div className="test-grid">
-                <TestCard title="Battery" detail={`${device.batteryHealth}% health • Charging normally`} />
-                <TestCard title="Storage" detail={`${device.storageHealth}% health • SMART passed`} />
-                <TestCard title="Memory" detail={`${device.memory} • Test passed`} />
-                <TestCard title="Display & keyboard" detail="Manual inspection completed" />
-                <TestCard title="Camera & audio" detail="Input and output test passed" />
-                <TestCard title="Ports & wireless" detail="USB, HDMI, Wi-Fi and Bluetooth passed" />
+                <TestCard
+                  title="Battery"
+                  detail={`${device.batteryHealth}% health • Diagnostic reading`}
+                  status={device.batteryHealth >= 75 ? "pass" : "fail"}
+                />
+                <TestCard
+                  title="Storage"
+                  detail={`${device.storageHealth}% health • SMART diagnostic`}
+                  status={device.storageHealth >= 75 ? "pass" : "fail"}
+                />
+                {evidence && inspectionKeys.map((key) => (
+                  <TestCard
+                    key={key}
+                    title={inspectionLabels[key].label}
+                    detail={evidence.checks[key] === "pass" ? "Technician inspection passed" : "Issue found during inspection"}
+                    status={evidence.checks[key]}
+                  />
+                ))}
               </div>
+
+              {evidence?.notes && (
+                <section className="passport-notes">
+                  <h2 className="section-title">Technician notes</h2>
+                  <p>{evidence.notes}</p>
+                </section>
+              )}
+
+              {evidence && evidence.photos.length > 0 && (
+                <section className="passport-evidence">
+                  <h2 className="section-title">Inspection evidence</h2>
+                  <div className="passport-photo-grid">
+                    {evidence.photos.map((photo) => (
+                      <figure key={photo.id}>
+                        <Image
+                          src={`/api/public/passports/${encodeURIComponent(device.id)}/photos/${encodeURIComponent(photo.id)}`}
+                          alt={photo.name}
+                          width={480}
+                          height={320}
+                          unoptimized
+                        />
+                        <figcaption>{photo.name}</figcaption>
+                      </figure>
+                    ))}
+                  </div>
+                </section>
+              )}
 
               <div className="spec-list">
                 <h2 className="section-title">Device specification</h2>
@@ -62,19 +107,21 @@ export default async function PassportPage({ params }: PassportPageProps) {
                 <Spec label="Memory" value={device.memory} />
                 <Spec label="Storage" value={device.storage} />
                 <Spec label="Technician" value={device.technician} />
+                {evidence && <Spec label="Inspection approved" value={formatApprovalDate(evidence.approvedAt)} />}
               </div>
             </section>
 
             <aside className="passport-side">
               <QrCode path={`/passport/${device.id}`} label={`QR code for ${device.name}`} />
-              <p style={{ margin: 0, color: "#64736b", fontSize: 10, lineHeight: 1.5, textAlign: "center" }}>
-                Scan to reopen this verified report at any time.
-              </p>
+              <p className="qr-description">Scan to reopen this verified report at any time.</p>
+              <Link className="button secondary passport-label-link" href={`/label/${device.id}`}>
+                Print 40 × 25 mm QR label
+              </Link>
               <div className="warranty-card">
                 <span>Digital warranty</span>
                 <strong>Active until {device.warrantyEnds}</strong>
                 <div className="meter"><span style={{ width: "72%" }} /></div>
-                <small>184 days remaining • Hardware coverage</small>
+                <small>Hardware coverage from the verified seller</small>
               </div>
               <div className="seller-card">
                 <strong>Sold and verified by Lapmart</strong>
@@ -89,10 +136,23 @@ export default async function PassportPage({ params }: PassportPageProps) {
   );
 }
 
-function TestCard({ title, detail }: { title: string; detail: string }) {
-  return <div className="test-card"><div className="test-card-head"><strong>{title}</strong><span className="pass-dot">✓</span></div><p>{detail}</p></div>;
+function TestCard({ title, detail, status }: { title: string; detail: string; status: CheckStatus }) {
+  return (
+    <div className={`test-card ${status === "fail" ? "test-card-failed" : ""}`}>
+      <div className="test-card-head">
+        <strong>{title}</strong>
+        <span className={`pass-dot ${status === "fail" ? "fail" : ""}`}>{status === "pass" ? "✓" : "!"}</span>
+      </div>
+      <p>{detail}</p>
+    </div>
+  );
 }
 
 function Spec({ label, value }: { label: string; value: string }) {
   return <div className="spec-row"><span>{label}</span><strong>{value}</strong></div>;
+}
+
+function formatApprovalDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
 }

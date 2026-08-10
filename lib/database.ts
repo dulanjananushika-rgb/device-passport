@@ -3,20 +3,13 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { devices as seedDevices, type DeviceRecord } from "../app/data/devices";
-
-type DiagnosticReport = {
-  reportVersion?: string;
-  collectedAt?: string;
-  device?: {
-    manufacturer?: string;
-    model?: string;
-    serialNumber?: string;
-    processor?: string;
-    memoryGB?: number;
-  };
-  battery?: { healthPercent?: number };
-  storage?: Array<{ model?: string; healthStatus?: string; sizeGB?: number }>;
-};
+import {
+  calculateInspectionScore,
+  inspectionKeys,
+  type DiagnosticReport,
+  type InspectionChecks,
+  type InspectionPhotoInput,
+} from "./inspection";
 
 type DeviceRow = {
   id: string;
@@ -34,6 +27,31 @@ type DeviceRow = {
   technician: string;
   warranty_ends: string;
   status: "Published" | "Needs review" | "Draft";
+};
+
+type InspectionRow = {
+  display: "pass" | "fail";
+  keyboard: "pass" | "fail";
+  camera: "pass" | "fail";
+  audio: "pass" | "fail";
+  ports: "pass" | "fail";
+  wireless: "pass" | "fail";
+  notes: string;
+  approved_at: string;
+};
+
+type PhotoRow = {
+  id: string;
+  name: string;
+  mime_type: string;
+  data?: Uint8Array;
+};
+
+export type PassportEvidence = {
+  checks: InspectionChecks;
+  notes: string;
+  approvedAt: string;
+  photos: Array<{ id: string; name: string; mimeType: string }>;
 };
 
 const globalDatabase = globalThis as typeof globalThis & { devicePassportDb?: DatabaseSync };
@@ -75,6 +93,27 @@ function getDatabase() {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS device_inspections (
+      device_id TEXT PRIMARY KEY,
+      display TEXT NOT NULL,
+      keyboard TEXT NOT NULL,
+      camera TEXT NOT NULL,
+      audio TEXT NOT NULL,
+      ports TEXT NOT NULL,
+      wireless TEXT NOT NULL,
+      notes TEXT NOT NULL DEFAULT '',
+      approved_at TEXT NOT NULL,
+      FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS device_photos (
+      id TEXT PRIMARY KEY,
+      device_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      data BLOB NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+    );
   `);
 
   const insert = database.prepare(`
@@ -83,7 +122,15 @@ function getDatabase() {
       memory, storage, processor, tested_at, technician, warranty_ends, status
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  for (const device of seedDevices) insert.run(...deviceValues(device));
+  const insertInspection = database.prepare(`
+    INSERT OR IGNORE INTO device_inspections (
+      device_id, display, keyboard, camera, audio, ports, wireless, notes, approved_at
+    ) VALUES (?, 'pass', 'pass', 'pass', 'pass', 'pass', 'pass', ?, ?)
+  `);
+  for (const device of seedDevices) {
+    insert.run(...deviceValues(device));
+    insertInspection.run(device.id, "Demo inspection completed before sale.", device.testedAt);
+  }
 
   globalDatabase.devicePassportDb = database;
   return database;
@@ -127,24 +174,50 @@ export function findDevice(id: string): DeviceRecord | null {
   return row ? rowToDevice(row) : null;
 }
 
-export function createDeviceFromReport(report: DiagnosticReport, technician: string): DeviceRecord {
+export function getPassportEvidence(deviceId: string): PassportEvidence | null {
+  const database = getDatabase();
+  const inspection = database.prepare("SELECT * FROM device_inspections WHERE device_id = ?").get(deviceId) as unknown as InspectionRow | undefined;
+  if (!inspection) return null;
+  const photos = database.prepare("SELECT id, name, mime_type FROM device_photos WHERE device_id = ? ORDER BY created_at, id").all(deviceId) as unknown as PhotoRow[];
+  return {
+    checks: {
+      display: inspection.display,
+      keyboard: inspection.keyboard,
+      camera: inspection.camera,
+      audio: inspection.audio,
+      ports: inspection.ports,
+      wireless: inspection.wireless,
+    },
+    notes: inspection.notes,
+    approvedAt: inspection.approved_at,
+    photos: photos.map((photo) => ({ id: photo.id, name: photo.name, mimeType: photo.mime_type })),
+  };
+}
+
+export function getPassportPhoto(deviceId: string, photoId: string) {
+  const row = getDatabase().prepare("SELECT id, name, mime_type, data FROM device_photos WHERE device_id = ? AND id = ?").get(deviceId, photoId) as unknown as PhotoRow | undefined;
+  return row?.data ? { data: row.data, mimeType: row.mime_type, name: row.name } : null;
+}
+
+export function createDeviceFromReport(
+  report: DiagnosticReport,
+  checks: InspectionChecks,
+  notes: string,
+  photos: InspectionPhotoInput[],
+  technician: string,
+): DeviceRecord {
   const model = report.device?.model?.trim();
   const serial = report.device?.serialNumber?.trim();
-  if (!model || !serial || serial === "UNKNOWN-SERIAL") {
-    throw new Error("A valid device model and serial number are required.");
-  }
+  if (!model || !serial || serial === "UNKNOWN-SERIAL") throw new Error("A valid device model and serial number are required.");
+  if (!inspectionKeys.every((key) => checks[key] === "pass" || checks[key] === "fail")) throw new Error("Every manual inspection check must be completed.");
+  if (photos.length > 4) throw new Error("A maximum of four evidence photos is allowed.");
 
-  const existing = getDatabase().prepare("SELECT id FROM devices WHERE serial = ?").get(serial) as { id: string } | undefined;
+  const database = getDatabase();
+  const existing = database.prepare("SELECT id FROM devices WHERE serial = ?").get(serial) as { id: string } | undefined;
   if (existing) throw new Error(`A passport already exists for serial ${serial}.`);
 
-  const batteryHealth = clamp(report.battery?.healthPercent ?? 0);
+  const scoring = calculateInspectionScore(report, checks);
   const firstDisk = report.storage?.[0];
-  const storageOkay = Boolean(firstDisk && /ok|healthy/i.test(firstDisk.healthStatus ?? ""));
-  const storageHealth = firstDisk ? (storageOkay ? 98 : 62) : 0;
-  const identityScore = 90;
-  const score = Math.round(batteryHealth * 0.45 + storageHealth * 0.35 + identityScore * 0.2);
-  const grade: DeviceRecord["grade"] = score >= 88 ? "A" : score >= 74 ? "B" : "C";
-  const needsReview = batteryHealth < 75 || !storageOkay;
   const testedDate = report.collectedAt ? new Date(report.collectedAt) : new Date();
   const warrantyDate = new Date();
   warrantyDate.setMonth(warrantyDate.getMonth() + 6);
@@ -154,20 +227,20 @@ export function createDeviceFromReport(report: DiagnosticReport, technician: str
     name: [report.device?.manufacturer, model].filter(Boolean).join(" "),
     model,
     serial,
-    grade,
-    score,
-    batteryHealth,
-    storageHealth,
+    grade: scoring.grade,
+    score: scoring.score,
+    batteryHealth: scoring.batteryHealth,
+    storageHealth: scoring.storageHealth,
     memory: report.device?.memoryGB ? `${report.device.memoryGB} GB` : "Not detected",
     storage: firstDisk ? `${firstDisk.sizeGB ?? "?"} GB ${firstDisk.model ?? "storage"}` : "Not detected",
     processor: report.device?.processor?.trim() || "Not detected",
     testedAt: testedDate.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }),
     technician,
     warrantyEnds: warrantyDate.toLocaleDateString("en-GB", { dateStyle: "medium" }),
-    status: needsReview ? "Needs review" : "Published",
+    status: scoring.needsReview ? "Needs review" : "Published",
   };
 
-  const database = getDatabase();
+  const preparedPhotos = photos.map(parsePhoto);
   database.exec("BEGIN");
   try {
     database.prepare(`
@@ -176,8 +249,14 @@ export function createDeviceFromReport(report: DiagnosticReport, technician: str
         memory, storage, processor, tested_at, technician, warranty_ends, status
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(...deviceValues(device));
-    database.prepare("INSERT INTO diagnostic_reports (id, device_id, report_json) VALUES (?, ?, ?)")
-      .run(randomUUID(), device.id, JSON.stringify(report));
+    database.prepare("INSERT INTO diagnostic_reports (id, device_id, report_json) VALUES (?, ?, ?)").run(randomUUID(), device.id, JSON.stringify(report));
+    database.prepare(`
+      INSERT INTO device_inspections (
+        device_id, display, keyboard, camera, audio, ports, wireless, notes, approved_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(device.id, checks.display, checks.keyboard, checks.camera, checks.audio, checks.ports, checks.wireless, notes.trim(), new Date().toISOString());
+    const insertPhoto = database.prepare("INSERT INTO device_photos (id, device_id, name, mime_type, data) VALUES (?, ?, ?, ?, ?)");
+    for (const photo of preparedPhotos) insertPhoto.run(randomUUID(), device.id, photo.name, photo.mimeType, photo.data);
     database.exec("COMMIT");
   } catch (error) {
     database.exec("ROLLBACK");
@@ -187,7 +266,10 @@ export function createDeviceFromReport(report: DiagnosticReport, technician: str
   return device;
 }
 
-function clamp(value: number) {
-  if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.min(100, Math.round(value)));
+function parsePhoto(photo: InspectionPhotoInput) {
+  const match = /^data:(image\/(?:jpeg|png|webp));base64,([a-zA-Z0-9+/=]+)$/.exec(photo.dataUrl);
+  if (!match) throw new Error(`Photo ${photo.name || "upload"} must be a JPEG, PNG, or WebP image.`);
+  const data = Buffer.from(match[2], "base64");
+  if (data.byteLength > 2 * 1024 * 1024) throw new Error(`Photo ${photo.name || "upload"} is larger than 2 MB.`);
+  return { name: photo.name.slice(0, 120) || "Device photo", mimeType: match[1], data };
 }

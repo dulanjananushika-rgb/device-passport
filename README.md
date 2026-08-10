@@ -8,7 +8,9 @@ DevicePassport is an independent shop system for refurbished laptop health repor
 - React 19
 - App-owned signed HTTP-only sessions
 - Local SQLite database through Node's built-in `node:sqlite`
-- Public QR passport pages
+- Three-step diagnostic import, technician inspection, and approval workflow
+- Photo evidence stored with each passport
+- Public QR passport pages and printable 40 × 25 mm asset labels
 - Windows PowerShell diagnostic collector
 
 ## Run locally
@@ -32,10 +34,19 @@ Copy `.env.example` to `.env.local` and replace every credential before deployin
 1. Sign in to the shop dashboard.
 2. Choose **New device test**.
 3. Upload `examples/sample-device-report.json`.
-4. Choose **Create passport**.
-5. Open the new public passport from the device table.
+4. Record each manual inspection as pass or fail and optionally attach up to four evidence photos.
+5. Review the calculated score, approve the inspection, and publish the passport.
+6. Open the public passport or print its 40 × 25 mm QR label.
 
 The imported report and passport record are saved in `.data/device-passport.db`.
+
+With the development server running, verify the complete login/import/passport/photo/label journey with:
+
+```bash
+npm run smoke
+```
+
+The smoke test removes its temporary device record when it finishes.
 
 ## Windows collector
 
