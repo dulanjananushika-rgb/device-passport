@@ -1,4 +1,7 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { getSession } from "../lib/auth";
+import { listDevices } from "../lib/database";
 import { Dashboard } from "./ui/Dashboard";
 
 export const metadata: Metadata = {
@@ -7,6 +10,11 @@ export const metadata: Metadata = {
     "Create transparent health reports, QR device passports, and track warranties for refurbished laptops.",
 };
 
-export default function Home() {
-  return <Dashboard />;
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  const session = await getSession();
+  if (!session) redirect("/login");
+
+  return <Dashboard initialDevices={listDevices()} userEmail={session.email} />;
 }

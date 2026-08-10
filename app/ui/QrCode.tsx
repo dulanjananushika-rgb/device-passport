@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
+import Image from "next/image";
 
 type QrCodeProps = {
   path: string;
@@ -23,7 +24,7 @@ export function QrCode({ path, label }: QrCodeProps) {
 
   return (
     <div className="qr-frame" aria-label={label}>
-      {src ? <img src={src} alt={label} /> : <div className="qr-placeholder">Creating QR…</div>}
+      {src ? <Image src={src} alt={label} width={220} height={220} unoptimized /> : <div className="qr-placeholder">Creating QR…</div>}
     </div>
   );
 }

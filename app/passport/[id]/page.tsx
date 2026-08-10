@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
-import { getDevice } from "../../data/devices";
+import { findDevice } from "../../../lib/database";
 import { QrCode } from "../../ui/QrCode";
+import { notFound } from "next/navigation";
+import Link from "next/link";
 
 type PassportPageProps = {
   params: Promise<{ id: string }>;
@@ -8,7 +10,8 @@ type PassportPageProps = {
 
 export async function generateMetadata({ params }: PassportPageProps): Promise<Metadata> {
   const { id } = await params;
-  const device = getDevice(id);
+  const device = findDevice(id);
+  if (!device) return {};
   return {
     title: `${device.name} – Verified passport`,
     description: `Health score ${device.score}/100, Grade ${device.grade}. Tested ${device.testedAt}.`,
@@ -17,15 +20,16 @@ export async function generateMetadata({ params }: PassportPageProps): Promise<M
 
 export default async function PassportPage({ params }: PassportPageProps) {
   const { id } = await params;
-  const device = getDevice(id);
+  const device = findDevice(id);
+  if (!device) notFound();
 
   return (
     <main className="passport-page">
       <div className="passport-wrap">
         <nav className="passport-nav">
-          <a className="brand" href="/" style={{ color: "#123c2e", padding: 0 }}>
+          <Link className="brand" href="/" style={{ color: "#123c2e", padding: 0 }}>
             <span className="brand-mark">D</span><span className="brand-name">DevicePassport</span>
-          </a>
+          </Link>
           <span className="verified-chip">Report integrity verified</span>
         </nav>
 

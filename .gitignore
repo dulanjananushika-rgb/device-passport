@@ -32,6 +32,10 @@ dev.err
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# local standalone database
+/.data/
 
 # vercel
 .vercel
@@ -39,6 +43,5 @@ dev.err
 # typescript
 next-env.d.ts
 /dist/
-/.wrangler/
 /outputs/
 /work/
