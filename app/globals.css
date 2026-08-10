@@ -3372,6 +3372,124 @@ a {
 .claim-not-active { display: grid; align-content: center; }
 .claim-not-active .button { width: fit-content; margin-top: 18px; }
 
+.recovery-card {
+  padding-bottom: 22px;
+}
+
+.system-state {
+  padding: 6px 9px;
+  border-radius: 999px;
+  color: #8a5c19;
+  background: #fff3df;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.system-state.ready {
+  color: #286649;
+  background: #eaf8ee;
+}
+
+.readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 18px 20px;
+}
+
+.readiness-check {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fafbf8;
+}
+
+.readiness-check > span {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  color: #8a5c19;
+  background: #fff0d6;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.readiness-check.ok > span {
+  color: #256344;
+  background: #ddf3e4;
+}
+
+.readiness-check div { min-width: 0; }
+.readiness-check strong { display: block; font-size: 10px; }
+.readiness-check p { margin: 3px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+
+.backup-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 20px;
+  padding: 16px 0 12px;
+  border-top: 1px solid var(--line);
+}
+
+.backup-toolbar > div { display: grid; gap: 3px; }
+.backup-toolbar strong { font-size: 12px; }
+.backup-toolbar span { color: var(--muted); font-size: 9px; }
+.recovery-card > .error-box,
+.recovery-card > .success-box { margin: 0 20px 12px; }
+
+.backup-list {
+  display: grid;
+  margin: 0 20px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+}
+
+.backup-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 11px;
+  align-items: center;
+  padding: 12px 14px;
+}
+
+.backup-row + .backup-row { border-top: 1px solid var(--line); }
+.backup-kind { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 10px; color: var(--forest); background: var(--lime-soft); font-size: 11px; font-weight: 900; }
+.backup-kind.safety { color: #8b5e1d; background: #fff0d7; }
+.backup-row > div:nth-child(2) { display: grid; min-width: 0; gap: 2px; }
+.backup-row strong { font-size: 10px; }
+.backup-row small { color: var(--muted); font-size: 9px; }
+.backup-row code { overflow: hidden; color: #7f8a84; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.backup-actions { display: flex; align-items: center; gap: 9px; }
+
+.restore-confirmation {
+  display: grid;
+  gap: 15px;
+  margin: 18px 20px 0;
+  padding: 18px;
+  border: 1px solid #edcaca;
+  border-radius: 14px;
+  background: #fff8f7;
+}
+
+.restore-confirmation h4 { margin: 5px 0; font-size: 15px; }
+.restore-confirmation p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.6; }
+.restore-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.restore-fields label { display: grid; gap: 6px; font-size: 9px; font-weight: 760; }
+.restore-fields input { min-width: 0; padding: 10px 11px; border: 1px solid #e5c4c4; border-radius: 9px; background: white; outline: none; }
+.danger-button { justify-content: center; color: white; border-color: #bd4b4b; background: #bd4b4b; }
+.danger-button:hover { background: #a63d3d; }
+
 @media (max-width: 1060px) {
   .app-shell { grid-template-columns: 82px minmax(0,1fr); }
   .sidebar { padding-inline: 12px; }
@@ -3459,6 +3577,10 @@ a {
   .warranty-period, .warranty-owner { grid-template-columns: 1fr; }
   .customer-card-links { align-items: stretch; flex-direction: column; }
   .customer-card-links .button { justify-content: center; }
+  .readiness-grid, .restore-fields { grid-template-columns: 1fr; }
+  .backup-toolbar { align-items: stretch; flex-direction: column; }
+  .backup-row { grid-template-columns: 32px minmax(0,1fr); }
+  .backup-actions { grid-column: 2; justify-content: flex-start; }
   .full-field { grid-column: auto; }
   .staff-create-card, .settings-card, .account-card { padding: 19px; }
   .shop-logo-control { align-items: flex-start; }

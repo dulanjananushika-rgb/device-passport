@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 
 const baseUrl = process.env.DEVICEPASSPORT_TEST_URL ?? "http://localhost:3000";
@@ -11,6 +11,7 @@ const invoiceReference = `SMOKE-INV-${runId}`;
 const tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 let createdDeviceId = "";
 let createdClaimId = "";
+const createdBackupNames = [];
 
 async function expectOk(response, step) {
   if (!response.ok) throw new Error(`${step} failed (${response.status}): ${await response.text()}`);
@@ -31,9 +32,17 @@ async function loginAs(email, password) {
 try {
   const { response: login, cookie } = await loginAs("owner@lapmart.lk", "devicepass");
 
+  const healthResponse = await expectOk(await fetch(`${baseUrl}/api/health`), "Public health check");
+  const health = await healthResponse.json();
+  if (health.status !== "healthy" || health.database !== "connected") throw new Error("The public health check did not report a connected database.");
+  if (healthResponse.headers.get("x-frame-options") !== "DENY") throw new Error("Production security headers were not applied.");
+
   const settingsResponse = await expectOk(await fetch(`${baseUrl}/api/settings`, { headers: { cookie } }), "Shop settings");
   const { settings } = await settingsResponse.json();
   if (!settings.shopName || !settings.warrantyMonths) throw new Error("Shop settings were not returned.");
+  const systemResponse = await expectOk(await fetch(`${baseUrl}/api/system`, { headers: { cookie } }), "System readiness");
+  const { system } = await systemResponse.json();
+  if (!system.checks.some((check) => check.key === "database" && check.ok)) throw new Error("System readiness did not validate the database.");
 
   const staffCreation = await expectOk(await fetch(`${baseUrl}/api/staff`, {
     method: "POST",
@@ -62,6 +71,8 @@ try {
   if (forbiddenReport.status !== 403) throw new Error(`Support report permission expected 403, received ${forbiddenReport.status}.`);
   const forbiddenStaff = await fetch(`${baseUrl}/api/staff`, { headers: { cookie: changedStaffCookie } });
   if (forbiddenStaff.status !== 403) throw new Error(`Support staff permission expected 403, received ${forbiddenStaff.status}.`);
+  const forbiddenSystem = await fetch(`${baseUrl}/api/system`, { headers: { cookie: changedStaffCookie } });
+  if (forbiddenSystem.status !== 403) throw new Error(`Support system permission expected 403, received ${forbiddenSystem.status}.`);
 
   const report = JSON.parse(await readFile(new URL("../examples/sample-device-report.json", import.meta.url), "utf8"));
   report.device.serialNumber = serial;
@@ -169,8 +180,43 @@ try {
   const auditPayload = await auditResponse.json();
   if (!auditPayload.audit.some((event) => event.summary.includes(staffEmail))) throw new Error("Staff audit activity was not recorded.");
 
+  const backupCreation = await expectOk(await fetch(`${baseUrl}/api/backups`, { method: "POST", headers: { cookie } }), "Manual database backup");
+  const { backup } = await backupCreation.json();
+  createdBackupNames.push(backup.name);
+  const backupDownload = await expectOk(await fetch(`${baseUrl}/api/backups/${encodeURIComponent(backup.name)}`, { headers: { cookie } }), "Backup download");
+  const backupBytes = await backupDownload.arrayBuffer();
+  if (!backupDownload.headers.get("content-type")?.includes("sqlite3") || backupBytes.byteLength < 4096) throw new Error("The backup download was not a valid SQLite payload.");
+
+  const unconfirmedRestore = await fetch(`${baseUrl}/api/backups/restore`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ name: backup.name, confirmation: "restore", password: "devicepass" }),
+  });
+  if (unconfirmedRestore.status !== 400) throw new Error(`Unconfirmed restore expected 400, received ${unconfirmedRestore.status}.`);
+
+  const restoreResponse = await expectOk(await fetch(`${baseUrl}/api/backups/restore`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ name: backup.name, confirmation: "RESTORE", password: "devicepass" }),
+  }), "Verified database restore");
+  const { result: restoreResult } = await restoreResponse.json();
+  createdBackupNames.push(restoreResult.safetyBackup.name);
+  const restoredSettings = await expectOk(await fetch(`${baseUrl}/api/settings`, { headers: { cookie } }), "Post-restore reconnect");
+
+  let rateLimitedLogin;
+  for (let attempt = 0; attempt < 9; attempt += 1) {
+    rateLimitedLogin = await fetch(`${baseUrl}/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: `limited-${runId}@example.com`, password: "wrong-password" }),
+    });
+  }
+  if (rateLimitedLogin?.status !== 429 || !rateLimitedLogin.headers.get("retry-after")) throw new Error("Login rate limiting did not activate after repeated failures.");
+
   console.log(JSON.stringify({
     login: login.status,
+    health: healthResponse.status,
+    system: systemResponse.status,
     import: imported.status,
     passport: passport.status,
     photo: photo.status,
@@ -192,6 +238,13 @@ try {
     supportSaleDenied: forbiddenActivation.status,
     duplicateSaleDenied: duplicateActivation.status,
     audit: auditResponse.status,
+    backup: backupCreation.status,
+    backupDownload: backupDownload.status,
+    restoreGuard: unconfirmedRestore.status,
+    restore: restoreResponse.status,
+    postRestore: restoredSettings.status,
+    loginRateLimit: rateLimitedLogin.status,
+    supportSystemDenied: forbiddenSystem.status,
     deviceId: device.id,
     claimId: claim.id,
   }, null, 2));
@@ -204,6 +257,10 @@ try {
     DELETE FROM audit_events
     WHERE actor = ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ?
   `).run(staffEmail, `%${staffEmail}%`, `%${serial}%`, `%${createdDeviceId}%`, `%${createdClaimId}%`);
+  const backupAudit = database.prepare("DELETE FROM audit_events WHERE summary LIKE ?");
+  let backupAuditChanges = 0;
+  for (const backupName of createdBackupNames) backupAuditChanges += Number(backupAudit.run(`%${backupName}%`).changes);
   database.close();
-  console.log(`Cleaned smoke-test data: ${deviceResult.changes} device, ${staffResult.changes} staff, ${auditResult.changes} audit events`);
+  for (const backupName of createdBackupNames) await rm(new URL(`../.data/backups/${backupName}`, import.meta.url), { force: true });
+  console.log(`Cleaned smoke-test data: ${deviceResult.changes} device, ${staffResult.changes} staff, ${Number(auditResult.changes) + backupAuditChanges} audit events, ${createdBackupNames.length} backups`);
 }

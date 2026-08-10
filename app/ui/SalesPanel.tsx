@@ -161,7 +161,8 @@ export function SalesPanel({ devices, canActivate, warrantyMonths, onDeviceChang
 function HandoverCard({ device, highlighted }: { device: DeviceRecord; highlighted: boolean }) {
   const sale = device.sale;
   if (!sale) return null;
-  return <div className="handover-card"><div className={`handover-success ${highlighted ? "highlighted" : ""}`}><span>✓</span><div><strong>{highlighted ? "Sale activated" : "Customer warranty"}</strong><small>{sale.invoiceReference}</small></div></div><div className="handover-customer"><span>Prepared for</span><h3>{sale.customerName}</h3><p>{device.name}<br />{device.id}</p></div><div className="handover-warranty"><div><span>Starts</span><strong>{formatSaleDate(sale.warrantyStarts)}</strong></div><div><span>Ends</span><strong>{formatSaleDate(sale.warrantyEnds)}</strong></div></div><div className="handover-qr"><QrCode path={`/warranty/${sale.handoverToken}`} label={`Warranty card QR for ${device.name}`} /><p>Customer can scan this private QR to reopen the warranty card and start a claim.</p></div><div className="handover-actions"><a className="button primary" href={`/warranty/${sale.handoverToken}`} target="_blank" rel="noreferrer">Open warranty card</a><a className="button secondary" href={`/passport/${device.id}`} target="_blank" rel="noreferrer">View passport</a></div></div>;
+  const path = `/warranty/${sale.handoverToken}`;
+  return <div className="handover-card"><div className={`handover-success ${highlighted ? "highlighted" : ""}`}><span>✓</span><div><strong>{highlighted ? "Sale activated" : "Customer warranty"}</strong><small>{sale.invoiceReference}</small></div></div><div className="handover-customer"><span>Prepared for</span><h3>{sale.customerName}</h3><p>{device.name}<br />{device.id}</p></div><div className="handover-warranty"><div><span>Starts</span><strong>{formatSaleDate(sale.warrantyStarts)}</strong></div><div><span>Ends</span><strong>{formatSaleDate(sale.warrantyEnds)}</strong></div></div><div className="handover-qr"><QrCode path={path} label={`Warranty card QR for ${device.name}`} /><p>Customer can scan this private QR to reopen the warranty card and start a claim.</p></div><div className="handover-actions"><a className="button primary" href={path} target="_blank" rel="noreferrer">Open warranty card</a><a className="button secondary" href={`/passport/${device.id}`} target="_blank" rel="noreferrer">View passport</a><button className="button secondary small" type="button" onClick={() => shareWarranty(path, device.name, sale.customerEmail, "email")}>Email link</button><button className="button secondary small" type="button" onClick={() => shareWarranty(path, device.name, sale.customerEmail, "whatsapp")}>WhatsApp</button></div></div>;
 }
 
 function SaleStat({ label, value, note }: { label: string; value: number; note: string }) {
@@ -175,4 +176,14 @@ function emptyActivation(today: string): ActivationForm {
 function formatSaleDate(value: string) {
   const date = new Date(`${value}T12:00:00.000Z`);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("en-GB", { dateStyle: "medium", timeZone: "UTC" });
+}
+
+function shareWarranty(path: string, deviceName: string, customerEmail: string, channel: "email" | "whatsapp") {
+  const url = new URL(path, window.location.origin).toString();
+  const message = `Your digital warranty for ${deviceName}: ${url}`;
+  if (channel === "whatsapp") {
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+    return;
+  }
+  window.location.href = `mailto:${encodeURIComponent(customerEmail)}?subject=${encodeURIComponent(`Digital warranty for ${deviceName}`)}&body=${encodeURIComponent(message)}`;
 }

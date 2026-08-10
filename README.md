@@ -20,6 +20,10 @@ DevicePassport is an independent shop system for refurbished laptop health repor
 - Authenticated claims inbox for shop staff
 - Configurable shop branding, contact details, warranty defaults, and logo
 - Staff account management, password changes, and audit history
+- Automatic daily SQLite snapshots with 14-day retention
+- Owner-only verified backup downloads and password-confirmed restore with a safety snapshot
+- Public health checks, production readiness checks, rate limits, and security headers
+- Docker deployment with a persistent database/backup volume
 - Windows PowerShell diagnostic collector
 
 ## Run locally
@@ -58,6 +62,8 @@ npm run smoke
 
 The smoke test removes its temporary device record when it finishes.
 
+The smoke journey also verifies health checks, security headers, backup creation/download, guarded restore, post-restore reconnection, and login rate limiting. Its temporary recovery files are removed automatically.
+
 ## Shop administration
 
 - **Owner** can manage branding, warranty defaults, staff accounts, sales, claims, and device tests.
@@ -83,6 +89,16 @@ Use **Settings** to update the shop identity and your own password. Use **Staff*
 4. Open **Claims** in the shop dashboard to review the request and publish status updates.
 5. The customer sees each update on the private tracker without creating an account.
 
+## Backups and recovery
+
+- Opening the authenticated dashboard ensures one automatic database snapshot exists for the current day.
+- The newest 14 automatic snapshots are retained in the configured backup directory.
+- Owners can open **Settings → Data protection** to create and download a manual recovery point.
+- Restore validates SQLite integrity and required tables before touching the live database.
+- Restore requires the current Owner password and the exact confirmation text `RESTORE`.
+- A fresh safety snapshot is always created before replacement, and a failed replacement rolls back to the original live database.
+- Detailed recovery steps are in [`docs/RECOVERY.md`](docs/RECOVERY.md).
+
 ## Windows collector
 
 Run this on the laptop being inspected:
@@ -95,6 +111,21 @@ The collector writes `device-report-<serial>.json`. Import that JSON in the dash
 
 ## Deployment
 
-`npm run build` creates a standard standalone Next.js Node application. Deploy it to a VPS, Docker host, Railway, Render, Fly.io, or another Node host with a persistent disk.
+`npm run build` creates a standard standalone Next.js Node application. The included Docker configuration runs it with a persistent `/app/.data` volume and checks `/api/health` every 30 seconds.
+
+1. Copy `.env.example` to `.env.production` and replace every credential and URL.
+2. Validate the runtime configuration:
+
+```bash
+npm run check:production
+```
+
+3. Build and run the production container:
+
+```bash
+docker compose --env-file .env.production up -d --build
+```
+
+4. Confirm `https://your-domain/api/health` returns `healthy`, then open **Settings → Data protection** and download the first recovery point.
 
 The built-in SQLite database is ideal for the local MVP and a single persistent server. Before multi-instance or serverless deployment, move the same schema to PostgreSQL.

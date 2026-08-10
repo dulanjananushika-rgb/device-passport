@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createWarrantyClaim } from "../../../../../../lib/database";
+import { checkRateLimit, requestRateKey } from "../../../../../../lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -9,6 +10,8 @@ type RouteContext = {
 
 export async function POST(request: Request, { params }: RouteContext) {
   const { id } = await params;
+  const rate = checkRateLimit(requestRateKey(request, "public-claim", id), 6, 60 * 60 * 1000);
+  if (!rate.allowed) return NextResponse.json({ error: "Too many claim attempts. Try again later." }, { status: 429, headers: { "retry-after": String(rate.retryAfterSeconds) } });
   const payload = await request.json().catch(() => null);
   if (!payload || typeof payload !== "object") {
     return NextResponse.json({ error: "Enter the required claim details." }, { status: 400 });

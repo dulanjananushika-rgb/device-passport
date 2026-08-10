@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { devices as seedDevices, type DeviceRecord } from "../app/data/devices";
@@ -149,8 +149,10 @@ export type PassportEvidence = {
 
 const globalDatabase = globalThis as typeof globalThis & { devicePassportDb?: DatabaseSync };
 
-function databasePath() {
-  return process.env.DEVICEPASSPORT_DATABASE_PATH ?? path.join(process.cwd(), ".data", "device-passport.db");
+export function getDatabaseFilePath() {
+  const configured = process.env.DEVICEPASSPORT_DATABASE_PATH?.trim();
+  if (configured === ":memory:") return configured;
+  return configured ? path.resolve(configured) : path.join(process.cwd(), ".data", "device-passport.db");
 }
 
 function ensureClaimSchema(database: DatabaseSync) {
@@ -349,7 +351,7 @@ function getDatabase() {
     return globalDatabase.devicePassportDb;
   }
 
-  const filePath = databasePath();
+  const filePath = getDatabaseFilePath();
   mkdirSync(path.dirname(filePath), { recursive: true });
   const database = new DatabaseSync(filePath);
   database.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
@@ -425,6 +427,65 @@ function getDatabase() {
 
   globalDatabase.devicePassportDb = database;
   return database;
+}
+
+export function createDatabaseSnapshot(destination: string) {
+  const activePath = getDatabaseFilePath();
+  if (activePath === ":memory:") throw new Error("Backups are unavailable for an in-memory database.");
+  const resolved = path.resolve(destination);
+  if (existsSync(resolved)) throw new Error("A backup with this name already exists.");
+  mkdirSync(path.dirname(resolved), { recursive: true });
+  const escaped = resolved.replaceAll("'", "''");
+  getDatabase().exec(`VACUUM INTO '${escaped}'`);
+}
+
+export function replaceDatabaseFromSnapshot(snapshotPath: string) {
+  const activePath = getDatabaseFilePath();
+  if (activePath === ":memory:") throw new Error("Restore is unavailable for an in-memory database.");
+  const resolvedSnapshot = path.resolve(snapshotPath);
+  if (!existsSync(resolvedSnapshot)) throw new Error("The validated restore snapshot is missing.");
+  const rollbackPath = `${activePath}.restore-${randomUUID()}.bak`;
+
+  closeDatabaseConnection();
+  removeDatabaseSidecars(activePath);
+  renameSync(activePath, rollbackPath);
+  try {
+    renameSync(resolvedSnapshot, activePath);
+    getDatabase();
+    rmSync(rollbackPath, { force: true });
+  } catch (error) {
+    closeDatabaseConnection();
+    removeDatabaseSidecars(activePath);
+    rmSync(activePath, { force: true });
+    renameSync(rollbackPath, activePath);
+    getDatabase();
+    throw error;
+  }
+}
+
+export function closeDatabaseConnection() {
+  if (!globalDatabase.devicePassportDb) return;
+  try {
+    globalDatabase.devicePassportDb.exec("PRAGMA wal_checkpoint(FULL)");
+  } finally {
+    globalDatabase.devicePassportDb.close();
+    delete globalDatabase.devicePassportDb;
+  }
+}
+
+export function databaseQuickCheck() {
+  try {
+    const row = getDatabase().prepare("PRAGMA quick_check").get() as { quick_check?: string } | undefined;
+    const message = row?.quick_check ?? "Database did not return a health result.";
+    return { ok: message === "ok", message };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "Database health check failed." };
+  }
+}
+
+function removeDatabaseSidecars(filePath: string) {
+  rmSync(`${filePath}-wal`, { force: true });
+  rmSync(`${filePath}-shm`, { force: true });
 }
 
 function deviceValues(device: DeviceRecord) {

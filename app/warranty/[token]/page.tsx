@@ -44,7 +44,7 @@ export default async function WarrantyPage({ params }: WarrantyPageProps) {
               <div className="customer-card-links"><Link className="button primary" href={`/passport/${device.id}/claim?handover=${device.sale.handoverToken}`}>Start a warranty claim</Link><Link className="button secondary" href={`/passport/${device.id}`}>View verified passport</Link></div>
             </section>
 
-            <aside className="warranty-qr-panel"><QrCode path={`/warranty/${device.sale.handoverToken}`} label={`Private warranty QR for ${device.name}`} /><h3>Save your warranty QR</h3><p>Scan it later to reopen this card. Anyone with this QR can access the registered warranty, so keep it private.</p><WarrantyActions /></aside>
+            <aside className="warranty-qr-panel"><QrCode path={`/warranty/${device.sale.handoverToken}`} label={`Private warranty QR for ${device.name}`} /><h3>Save your warranty QR</h3><p>Scan it later to reopen this card. Anyone with this QR can access the registered warranty, so keep it private.</p><WarrantyActions path={`/warranty/${device.sale.handoverToken}`} customerEmail={device.sale.customerEmail} deviceName={device.name} /></aside>
           </div>
         </article>
       </div>

@@ -17,6 +17,8 @@ import {
   type InspectionPhotoInput,
 } from "../../lib/inspection";
 import { SalesPanel } from "./SalesPanel";
+import { RecoveryPanel } from "./RecoveryPanel";
+import type { SystemReadiness } from "../../lib/readiness";
 
 type View = "overview" | "devices" | "sales" | "warranties" | "reports" | "staff" | "settings";
 type WizardStage = 1 | 2 | 3;
@@ -37,10 +39,11 @@ type DashboardProps = {
   initialStaff: StaffAccount[];
   initialAudit: AuditEvent[];
   initialSettings: ShopSettings;
+  initialSystem: SystemReadiness | null;
   session: StaffSession;
 };
 
-export function Dashboard({ initialDevices, initialClaims, initialStaff, initialAudit, initialSettings, session }: DashboardProps) {
+export function Dashboard({ initialDevices, initialClaims, initialStaff, initialAudit, initialSettings, initialSystem, session }: DashboardProps) {
   const [records, setRecords] = useState(initialDevices);
   const [claims, setClaims] = useState(initialClaims);
   const [staff, setStaff] = useState(initialStaff);
@@ -226,7 +229,7 @@ export function Dashboard({ initialDevices, initialClaims, initialStaff, initial
         {view === "warranties" && <Warranties records={records} claims={claims} onClaimUpdate={(updated) => setClaims((current) => current.map((claim) => claim.id === updated.id ? updated : claim))} />}
         {view === "reports" && <Reports records={records} />}
         {view === "staff" && isOwner && <StaffPanel staff={staff} audit={audit} currentStaffId={session.id} onStaffChange={setStaff} onAuditChange={refreshAudit} />}
-        {view === "settings" && <SettingsPanel settings={settings} session={session} onSettingsChange={setSettings} onAuditChange={refreshAudit} />}
+        {view === "settings" && <SettingsPanel settings={settings} session={session} initialSystem={initialSystem} onSettingsChange={setSettings} onAuditChange={refreshAudit} />}
       </main>
 
       {modalOpen && (
@@ -515,7 +518,7 @@ function StaffEditor({ member, isCurrent, onUpdated }: { member: StaffAccount; i
   );
 }
 
-function SettingsPanel({ settings, session, onSettingsChange, onAuditChange }: { settings: ShopSettings; session: StaffSession; onSettingsChange: (settings: ShopSettings) => void; onAuditChange: () => Promise<void> }) {
+function SettingsPanel({ settings, session, initialSystem, onSettingsChange, onAuditChange }: { settings: ShopSettings; session: StaffSession; initialSystem: SystemReadiness | null; onSettingsChange: (settings: ShopSettings) => void; onAuditChange: () => Promise<void> }) {
   const [form, setForm] = useState(settings);
   const [settingsError, setSettingsError] = useState("");
   const [settingsSuccess, setSettingsSuccess] = useState("");
@@ -596,6 +599,7 @@ function SettingsPanel({ settings, session, onSettingsChange, onAuditChange }: {
           </section>
 
           {session.role === "Owner" && <section className="panel settings-card"><div className="panel-head"><div><h3 className="panel-title">Warranty defaults</h3><p className="panel-subtitle">Applied automatically to every new device passport</p></div></div><div className="settings-fields"><label>Coverage duration<select value={form.warrantyMonths} onChange={(event) => change("warrantyMonths", Number(event.target.value))}>{[1,3,6,12,18,24,36].map((months) => <option value={months} key={months}>{months} month{months === 1 ? "" : "s"}</option>)}</select></label><label className="full-field">Public warranty terms<textarea value={form.warrantyTerms} maxLength={1200} onChange={(event) => change("warrantyTerms", event.target.value)} /></label></div>{settingsSuccess && <div className="success-box">{settingsSuccess}</div>}<button className="button primary" type="button" disabled={saving} onClick={saveSettings}>{saving ? "Saving settings…" : "Save shop settings"}</button></section>}
+          {session.role === "Owner" && initialSystem && <RecoveryPanel initialSystem={initialSystem} onAuditChange={onAuditChange} />}
         </div>
 
         <aside className="settings-side">

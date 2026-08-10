@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getSession } from "../lib/auth";
+import { ensureDailyBackup } from "../lib/backups";
 import { getShopSettings, listAuditEvents, listDevices, listStaffAccounts, listWarrantyClaims } from "../lib/database";
+import { getSystemReadiness } from "../lib/readiness";
 import { Dashboard } from "./ui/Dashboard";
 
 export const metadata: Metadata = {
@@ -15,6 +17,7 @@ export const dynamic = "force-dynamic";
 export default async function Home() {
   const session = await getSession();
   if (!session) redirect("/login");
+  ensureDailyBackup();
 
   const ownerData = session.role === "Owner";
   return (
@@ -24,6 +27,7 @@ export default async function Home() {
       initialStaff={ownerData ? listStaffAccounts() : []}
       initialAudit={ownerData ? listAuditEvents() : []}
       initialSettings={getShopSettings()}
+      initialSystem={ownerData ? getSystemReadiness() : null}
       session={session}
     />
   );
