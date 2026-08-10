@@ -144,6 +144,7 @@ try {
   const { device } = await imported.json();
   createdDeviceId = device.id;
   if (device.lifecycleStatus !== "Ready" || device.sale || device.warrantyEnds) throw new Error("A new verified passport did not enter the Ready lifecycle state.");
+  if (device.diagnostics?.batteryCycleCount !== 184 || device.diagnostics?.storagePowerOnHours !== 1842 || device.diagnostics?.cpuStressPassed !== true || device.diagnostics?.cpuStressCompletedWorkers !== 4 || device.diagnostics?.cpuPeakTemperatureC !== 72) throw new Error("Tester V2 evidence was not preserved on the device record.");
 
   const taskCreation = await expectOk(await fetch(`${baseUrl}/api/procurement/intakes/${createdIntake.id}/tasks`, {
     method: "POST",
@@ -195,6 +196,7 @@ try {
   const passport = await expectOk(await fetch(`${baseUrl}/passport/${device.id}`), "Public passport");
   const passportHtml = await passport.text();
   if (!passportHtml.includes("Smoke-test evidence note")) throw new Error("Technician notes were not rendered.");
+  if (!passportHtml.includes("184 cycles") || !passportHtml.includes("1,842 power-on hours") || !passportHtml.includes("4/4 workers completed") || !passportHtml.includes("72°C peak")) throw new Error("The public passport did not render Tester V2 diagnostic evidence.");
   if (!passportHtml.includes("Activates at customer handover")) throw new Error("The unsold passport did not show its activation state.");
   const photoPath = passportHtml.match(/\/api\/public\/passports\/[^"']+\/photos\/[^"']+/)?.[0];
   if (!photoPath) throw new Error("The evidence photo URL was not rendered.");
@@ -241,6 +243,7 @@ try {
   const warrantyCard = await expectOk(await fetch(`${baseUrl}/warranty/${activatedDevice.sale.handoverToken}`), "Private warranty card");
   const warrantyCardHtml = await warrantyCard.text();
   if (!warrantyCardHtml.includes(invoiceReference) || !warrantyCardHtml.includes("Smoke Test Customer")) throw new Error("The private warranty card did not render the handover details.");
+  if (!warrantyCardHtml.includes("No service claims recorded")) throw new Error("The clean private service history state was not rendered.");
 
   const claimSubmission = await expectOk(await fetch(`${baseUrl}/api/public/passports/${device.id}/claims`, {
     method: "POST",
@@ -325,6 +328,10 @@ try {
   const updatedTracker = await expectOk(await fetch(`${baseUrl}/claim/${claim.trackingToken}`), "Updated claim tracker");
   const updatedTrackerHtml = await updatedTracker.text();
   if (!updatedTrackerHtml.includes("Smoke-test technician review started")) throw new Error("The customer timeline did not show the shop update.");
+  const serviceHistory = await expectOk(await fetch(`${baseUrl}/warranty/${activatedDevice.sale.handoverToken}`), "Consolidated warranty service history");
+  const serviceHistoryHtml = await serviceHistory.text();
+  if (!serviceHistoryHtml.includes(claim.id) || !serviceHistoryHtml.includes("Smoke-test technician review started") || !serviceHistoryHtml.includes("Open claim timeline")) throw new Error("The private warranty card did not consolidate the device service history.");
+  if (serviceHistoryHtml.includes(privateRepairNote)) throw new Error("An internal repair note leaked to the consolidated customer service history.");
   const auditResponse = await expectOk(await fetch(`${baseUrl}/api/audit`, { headers: { cookie } }), "Audit history");
   const auditPayload = await auditResponse.json();
   if (!auditPayload.audit.some((event) => event.summary.includes(staffEmail))) throw new Error("Staff audit activity was not recorded.");
@@ -404,6 +411,7 @@ try {
     jobSheet: jobSheet.status,
     jobSheetProtected: unauthenticatedJobSheet.status,
     statusUpdate: statusUpdate.status,
+    serviceHistory: serviceHistory.status,
     settings: settingsResponse.status,
     staffCreate: staffCreation.status,
     passwordChange: passwordChange.status,

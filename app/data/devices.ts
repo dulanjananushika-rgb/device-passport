@@ -1,4 +1,5 @@
 import type { DeviceLifecycleStatus, DeviceSale } from "../../lib/sales";
+import type { DeviceDiagnostics } from "../../lib/inspection";
 
 export type DeviceRecord = {
   id: string;
@@ -18,6 +19,7 @@ export type DeviceRecord = {
   status: "Published" | "Needs review" | "Draft";
   lifecycleStatus: DeviceLifecycleStatus;
   sale: DeviceSale | null;
+  diagnostics?: DeviceDiagnostics;
 };
 
 export const devices: DeviceRecord[] = [

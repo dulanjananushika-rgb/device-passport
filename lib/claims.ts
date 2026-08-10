@@ -82,6 +82,18 @@ export type PublicWarrantyClaim = Omit<WarrantyClaimSummary, "trackingToken" | "
   events: ClaimEvent[];
 };
 
+export type WarrantyServiceRecord = {
+  id: string;
+  trackingToken: string;
+  category: ClaimCategory;
+  description: string;
+  status: ClaimStatus;
+  warrantyValid: boolean;
+  createdAt: string;
+  updatedAt: string;
+  events: ClaimEvent[];
+};
+
 export function isClaimStatus(value: unknown): value is ClaimStatus {
   return typeof value === "string" && claimStatuses.includes(value as ClaimStatus);
 }

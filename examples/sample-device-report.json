@@ -1,9 +1,9 @@
 {
-  "reportVersion": "1.0",
+  "reportVersion": "2.0",
   "collectedAt": "2026-08-10T01:42:00.0000000Z",
   "collector": {
     "name": "DevicePassport Windows Collector",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "hostname": "LAPMART-TEST-04"
   },
   "device": {
@@ -30,9 +30,35 @@
       "interface": "SCSI",
       "mediaType": "Fixed hard disk media",
       "sizeGB": 476.9,
-      "healthStatus": "OK"
+      "healthStatus": "OK",
+      "powerOnHours": 1842,
+      "temperatureC": 38,
+      "wearPercent": 4,
+      "smartSource": "Windows Storage Reliability Counter"
     }
   ],
+  "performance": {
+    "memory": {
+      "availableGB": 9.8,
+      "usedPercent": 38.8
+    },
+    "cpu": {
+      "logicalProcessors": 8,
+      "loadPercentBeforeTest": 7,
+      "temperatureCBeforeTest": 47
+    },
+    "stressTest": {
+      "executed": true,
+      "durationSeconds": 10,
+      "passed": true,
+      "averageLoadPercent": 91,
+      "peakTemperatureC": 72,
+      "sampleCount": 10,
+      "workerCount": 4,
+      "completedWorkers": 4,
+      "note": "CPU load workers completed without an execution error."
+    }
+  },
   "manualChecks": {
     "display": "Not checked",
     "keyboard": "Not checked",
@@ -44,6 +70,6 @@
   "integrity": {
     "source": "local-windows-cim",
     "signed": false,
-    "note": "MVP collector report. Report signing will be added before production use."
+    "note": "Tester V2 sample report. Report signing will be added before production use."
   }
 }

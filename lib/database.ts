@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { devices as seedDevices, type DeviceRecord } from "../app/data/devices";
 import {
   calculateInspectionScore,
+  extractDeviceDiagnostics,
   inspectionKeys,
   type DiagnosticReport,
   type InspectionChecks,
@@ -20,6 +21,7 @@ import {
   type ClaimPriority,
   type ClaimStatus,
   type PublicWarrantyClaim,
+  type WarrantyServiceRecord,
   type WarrantyClaimInput,
   type WarrantyClaimSummary,
   type WarrantyClaimUpdate,
@@ -54,6 +56,7 @@ type DeviceRow = {
 };
 
 type DeviceWithSaleRow = DeviceRow & {
+  diagnostic_report_json: string | null;
   sale_customer_name: string | null;
   sale_customer_email: string | null;
   sale_customer_phone: string | null;
@@ -611,6 +614,14 @@ function deviceValues(device: DeviceRecord) {
 }
 
 function rowToDevice(row: DeviceWithSaleRow): DeviceRecord {
+  let diagnosticReport: DiagnosticReport | null = null;
+  if (row.diagnostic_report_json) {
+    try {
+      diagnosticReport = JSON.parse(row.diagnostic_report_json) as DiagnosticReport;
+    } catch {
+      diagnosticReport = null;
+    }
+  }
   const sale: DeviceSale | null = row.sale_handover_token ? {
     customerName: row.sale_customer_name ?? "",
     customerEmail: row.sale_customer_email ?? "",
@@ -641,6 +652,7 @@ function rowToDevice(row: DeviceWithSaleRow): DeviceRecord {
     status: row.status,
     lifecycleStatus: sale ? "Sold" : row.status === "Published" ? "Ready" : "Draft",
     sale,
+    diagnostics: extractDeviceDiagnostics(diagnosticReport),
   };
 }
 
@@ -783,6 +795,7 @@ export function recordAuditEvent(actor: string, action: string, summary: string)
 
 const deviceSelectSql = `
   SELECT d.*,
+    (SELECT r.report_json FROM diagnostic_reports r WHERE r.device_id = d.id ORDER BY r.created_at DESC, r.id DESC LIMIT 1) AS diagnostic_report_json,
     s.customer_name AS sale_customer_name,
     s.customer_email AS sale_customer_email,
     s.customer_phone AS sale_customer_phone,
@@ -1059,6 +1072,32 @@ export function findPublicClaim(trackingToken: string): PublicWarrantyClaim | nu
   };
 }
 
+export function listWarrantyServiceHistory(deviceId: string): WarrantyServiceRecord[] {
+  const database = getDatabase();
+  const shopSettings = readShopSettings(database);
+  const rows = database.prepare(`${claimSummarySql} WHERE c.device_id = ? ORDER BY c.created_at DESC, c.id DESC`).all(deviceId) as unknown as ClaimRow[];
+  return rows.map((row) => {
+    const eventRows = database.prepare("SELECT id, status, note, actor, created_at FROM claim_events WHERE claim_id = ? ORDER BY created_at DESC, id DESC").all(row.id) as unknown as ClaimEventRow[];
+    return {
+      id: row.id,
+      trackingToken: row.tracking_token,
+      category: row.category,
+      description: row.description,
+      status: row.status,
+      warrantyValid: Boolean(row.warranty_valid),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      events: eventRows.map((event) => ({
+        id: event.id,
+        status: event.status,
+        note: event.note,
+        actor: event.actor === "Customer" ? "Customer" : `${shopSettings.shopName} support`,
+        createdAt: event.created_at,
+      })),
+    };
+  });
+}
+
 export function getClaimPhoto(trackingToken: string, photoId: string) {
   const row = getDatabase().prepare(`
     SELECT p.id, p.name, p.mime_type, p.data
@@ -1201,6 +1240,7 @@ export function createDeviceFromReport(
     status: scoring.needsReview ? "Needs review" : "Published",
     lifecycleStatus: scoring.needsReview ? "Draft" : "Ready",
     sale: null,
+    diagnostics: extractDeviceDiagnostics(report),
   };
 
   const preparedPhotos = photos.map(parsePhoto);

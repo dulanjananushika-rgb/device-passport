@@ -3,7 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { findDevice, getPassportEvidence, getShopSettings, isWarrantyActive } from "../../../lib/database";
-import { inspectionKeys, inspectionLabels, type CheckStatus } from "../../../lib/inspection";
+import { inspectionKeys, inspectionLabels, type CheckStatus, type DeviceDiagnostics } from "../../../lib/inspection";
 import { QrCode } from "../../ui/QrCode";
 import { ShopBrand } from "../../ui/ShopBrand";
 
@@ -56,13 +56,18 @@ export default async function PassportPage({ params }: PassportPageProps) {
               <div className="test-grid">
                 <TestCard
                   title="Battery"
-                  detail={`${device.batteryHealth}% health • Diagnostic reading`}
+                  detail={`${device.batteryHealth}% health • ${formatCycles(device.diagnostics?.batteryCycleCount)}`}
                   status={device.batteryHealth >= 75 ? "pass" : "fail"}
                 />
                 <TestCard
                   title="Storage"
-                  detail={`${device.storageHealth}% health • SMART diagnostic`}
+                  detail={`${device.storageHealth}% health • ${formatStorageEvidence(device.diagnostics?.storagePowerOnHours, device.diagnostics?.storageTemperatureC)}`}
                   status={device.storageHealth >= 75 ? "pass" : "fail"}
+                />
+                <TestCard
+                  title="CPU stability"
+                  detail={formatCpuStress(device.diagnostics)}
+                  status={device.diagnostics?.cpuStressPassed === true ? "pass" : device.diagnostics?.cpuStressPassed === false ? "fail" : "info"}
                 />
                 {evidence && inspectionKeys.map((key) => (
                   <TestCard
@@ -107,6 +112,9 @@ export default async function PassportPage({ params }: PassportPageProps) {
                 <Spec label="Processor" value={device.processor} />
                 <Spec label="Memory" value={device.memory} />
                 <Spec label="Storage" value={device.storage} />
+                <Spec label="Memory load at test" value={formatPercent(device.diagnostics?.memoryUsedPercent)} />
+                <Spec label="SSD wear reading" value={formatWear(device.diagnostics?.storageWearPercent)} />
+                <Spec label="Tester report" value={`${device.diagnostics?.reportVersion ?? "Legacy"} · collector ${device.diagnostics?.collectorVersion ?? "unknown"}`} />
                 <Spec label="Technician" value={device.technician} />
                 {evidence && <Spec label="Inspection approved" value={formatApprovalDate(evidence.approvedAt)} />}
               </div>
@@ -138,16 +146,44 @@ export default async function PassportPage({ params }: PassportPageProps) {
   );
 }
 
-function TestCard({ title, detail, status }: { title: string; detail: string; status: CheckStatus }) {
+function TestCard({ title, detail, status }: { title: string; detail: string; status: CheckStatus | "info" }) {
   return (
     <div className={`test-card ${status === "fail" ? "test-card-failed" : ""}`}>
       <div className="test-card-head">
         <strong>{title}</strong>
-        <span className={`pass-dot ${status === "fail" ? "fail" : ""}`}>{status === "pass" ? "✓" : "!"}</span>
+        <span className={`pass-dot ${status}`}>{status === "pass" ? "✓" : status === "fail" ? "!" : "i"}</span>
       </div>
       <p>{detail}</p>
     </div>
   );
+}
+
+function formatCycles(value: number | null | undefined) {
+  return value === null || value === undefined ? "Cycle count not exposed" : `${Math.round(value).toLocaleString("en-US")} cycles`;
+}
+
+function formatStorageEvidence(hours: number | null | undefined, temperature: number | null | undefined) {
+  const parts = [hours === null || hours === undefined ? "Usage hours not exposed" : `${Math.round(hours).toLocaleString("en-US")} power-on hours`];
+  if (temperature !== null && temperature !== undefined) parts.push(`${Math.round(temperature)}°C at test`);
+  return parts.join(" • ");
+}
+
+function formatCpuStress(diagnostics: DeviceDiagnostics | undefined) {
+  if (!diagnostics?.cpuStressExecuted || diagnostics.cpuStressPassed === null) return "Stress evidence not captured in this report";
+  const parts = [diagnostics.cpuStressPassed ? "Passed" : "Review required"];
+  if (diagnostics.cpuStressDurationSeconds !== null) parts.push(`${Math.round(diagnostics.cpuStressDurationSeconds)} sec load`);
+  if (diagnostics.cpuStressWorkerCount !== null && diagnostics.cpuStressCompletedWorkers !== null) parts.push(`${Math.round(diagnostics.cpuStressCompletedWorkers)}/${Math.round(diagnostics.cpuStressWorkerCount)} workers completed`);
+  if (diagnostics.cpuAverageLoadPercent !== null) parts.push(`${Math.round(diagnostics.cpuAverageLoadPercent)}% average load`);
+  if (diagnostics.cpuPeakTemperatureC !== null) parts.push(`${Math.round(diagnostics.cpuPeakTemperatureC)}°C peak`);
+  return parts.join(" • ");
+}
+
+function formatPercent(value: number | null | undefined) {
+  return value === null || value === undefined ? "Not exposed" : `${Math.round(value)}% used`;
+}
+
+function formatWear(value: number | null | undefined) {
+  return value === null || value === undefined ? "Not exposed by drive" : `${Math.round(value)}% wear reported`;
 }
 
 function Spec({ label, value }: { label: string; value: string }) {

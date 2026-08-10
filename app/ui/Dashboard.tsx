@@ -301,7 +301,7 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
                 <label className="drop-zone"><span><span className="drop-icon">JSON</span><h3>Import the Windows health report</h3><p>Run the DevicePassport collector on the laptop, then select its generated report.</p><span className="button secondary small">Choose report</span><input className="file-input" type="file" accept="application/json,.json" onChange={handleImport} /></span></label>
               ) : stage === 2 && imported ? (
                 <div className="wizard-section">
-                  <div className="import-success compact"><h3>Automatic report connected</h3><div className="import-grid"><div><span>Device</span><strong>{imported.device?.manufacturer} {imported.device?.model}</strong></div><div><span>Serial</span><strong>{imported.device?.serialNumber}</strong></div><div><span>Memory</span><strong>{imported.device?.memoryGB ?? "-"} GB</strong></div><div><span>Battery</span><strong>{imported.battery?.healthPercent ?? "-"}%</strong></div></div></div>
+                  <div className="import-success compact"><h3>Tester V2 report connected</h3><div className="import-grid"><div><span>Device</span><strong>{imported.device?.manufacturer} {imported.device?.model}</strong></div><div><span>Serial</span><strong>{imported.device?.serialNumber}</strong></div><div><span>Memory</span><strong>{imported.device?.memoryGB ?? "-"} GB</strong></div><div><span>Battery</span><strong>{imported.battery?.healthPercent ?? "-"}%</strong></div><div><span>Battery cycles</span><strong>{imported.battery?.cycleCount ?? "Not exposed"}</strong></div><div><span>SSD usage</span><strong>{formatHours(imported.storage?.[0]?.powerOnHours)}</strong></div><div><span>CPU stress</span><strong>{formatStress(imported)}</strong></div><div><span>CPU peak</span><strong>{formatTemperature(imported.performance?.stressTest?.peakTemperatureC)}</strong></div></div></div>
                   <div className="wizard-title"><div><h3>Manual hardware inspection</h3><p>Test every item and record the actual result.</p></div><span>{Object.keys(checks).length}/{inspectionKeys.length} complete</span></div>
                   <div className="inspection-list">{inspectionKeys.map((key) => <InspectionControl key={key} checkKey={key} value={checks[key]} onChange={setCheck} />)}</div>
                   <label className="notes-field">Technician notes<textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Cosmetic marks, replaced parts, or anything the buyer should know" maxLength={800} /></label>
@@ -309,7 +309,7 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
               ) : imported && scorePreview ? (
                 <div className="wizard-section">
                   <div className="score-preview"><div><div className="eyebrow">Calculated result</div><strong>{scorePreview.score}<small>/100</small></strong><span>{scorePreview.needsReview ? "Needs technician review" : "Ready to publish"}</span></div><div className="grade-badge preview-grade">{scorePreview.grade}</div></div>
-                  <div className="score-breakdown"><div><span>Battery</span><strong>{scorePreview.batteryHealth}%</strong></div><div><span>Storage</span><strong>{scorePreview.storageHealth}%</strong></div><div><span>Manual checks</span><strong>{scorePreview.manualScore}%</strong></div></div>
+                  <div className="score-breakdown"><div><span>Battery</span><strong>{scorePreview.batteryHealth}%</strong></div><div><span>Storage</span><strong>{scorePreview.storageHealth}%</strong></div><div><span>CPU stability</span><strong>{scorePreview.performanceScore}%</strong></div><div><span>Manual checks</span><strong>{scorePreview.manualScore}%</strong></div></div>
                   <div className="photo-section"><div className="wizard-title"><div><h3>Photo evidence</h3><p>Add up to four JPEG, PNG, or WebP photos. Maximum 2 MB each.</p></div><span>{photos.length}/4</span></div><div className="photo-grid">{photos.map((photo, index) => <div className="photo-preview" key={`${photo.name}-${index}`}><Image src={photo.dataUrl} alt={photo.name} width={160} height={100} unoptimized /><button type="button" onClick={() => removePhoto(index)} aria-label={`Remove ${photo.name}`}>x</button><span>{photo.name}</span></div>)}{photos.length < 4 && <label className="photo-add">+<span>Add photos</span><input className="file-input" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={handlePhotos} /></label>}</div></div>
                   <label className="approval-check"><input type="checkbox" checked={approved} onChange={(event) => setApproved(event.target.checked)} /><span><strong>I approve this inspection</strong><small>I confirm the automatic report and manual checks match this physical device.</small></span></label>
                 </div>
@@ -338,6 +338,20 @@ function readPhoto(file: File): Promise<InspectionPhotoInput> {
     reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
     reader.readAsDataURL(file);
   });
+}
+
+function formatHours(value: number | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value).toLocaleString("en-US")} hours` : "Not exposed";
+}
+
+function formatTemperature(value: number | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)}°C` : "Not exposed";
+}
+
+function formatStress(report: DiagnosticReport) {
+  const stress = report.performance?.stressTest;
+  if (!stress?.executed) return "Not run";
+  return stress.passed ? `Passed · ${stress.durationSeconds ?? "?"} sec` : "Review required";
 }
 
 function NavButton({ icon, label, active, onClick }: { icon: string; label: string; active: boolean; onClick: () => void }) {

@@ -32,6 +32,8 @@ DevicePassport is an independent shop system for refurbished laptop health repor
 - Public health checks, production readiness checks, rate limits, and security headers
 - Docker deployment with a persistent database/backup volume
 - Windows PowerShell diagnostic collector
+- Tester V2 battery-cycle, SSD power-on-hour/temperature/wear, memory-load, and CPU stability evidence
+- Consolidated service history on the buyer's private warranty QR card
 
 ## Run locally
 
@@ -95,6 +97,7 @@ Use **Settings** to update the shop identity and your own password. Use **Staff*
 3. Save the private tracking link shown after submission.
 4. Open **Claims** in the shop dashboard to review the request and publish status updates.
 5. The customer sees each update on the private tracker without creating an account.
+6. The private warranty QR card consolidates every claim and customer-safe service update for that exact device. Internal repair notes and costs remain staff-only.
 
 ## Warranty service desk
 
@@ -154,7 +157,9 @@ Run this on the laptop being inspected:
 powershell -ExecutionPolicy Bypass -File .\tools\windows\collect-device-health.ps1
 ```
 
-The collector writes `device-report-<serial>.json`. Import that JSON in the dashboard.
+Tester V2 applies a short 10-second CPU load by default and records battery cycles, best-effort SSD reliability counters, memory use, CPU load, and available temperature readings. Change the controlled load duration with `-StressSeconds 20`, or use `-StressSeconds 0` when only inventory readings are required.
+
+The collector writes `device-report-<serial>.json`. Import that JSON in the dashboard. Windows and some drive firmware do not expose every temperature, wear, cycle, or power-on-hour field; unavailable evidence is stored and displayed honestly as **Not exposed** rather than guessed.
 
 ## Deployment
 
