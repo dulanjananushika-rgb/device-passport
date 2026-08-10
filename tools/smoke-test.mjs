@@ -1,5 +1,6 @@
 import { readFile, rm } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
+import { createHmac } from "node:crypto";
 
 const baseUrl = process.env.DEVICEPASSPORT_TEST_URL ?? "http://localhost:3000";
 const runId = Date.now();
@@ -9,12 +10,14 @@ const temporaryPassword = "SmokePass!234";
 const changedPassword = "SmokePass!567";
 const invoiceReference = `SMOKE-INV-${runId}`;
 const supplierName = `Smoke Supplier ${runId}`;
+const testerAgentName = `Smoke Tester ${runId}`;
 const restoreTestIp = `198.51.100.${(runId % 200) + 1}`;
 const tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 let createdDeviceId = "";
 let createdClaimId = "";
 let createdSupplierId = "";
 let createdIntakeId = "";
+let createdTesterAgentId = "";
 const createdBackupNames = [];
 
 async function expectOk(response, step) {
@@ -66,6 +69,16 @@ try {
   const { cookie: changedStaffCookie } = await loginAs(staffEmail, changedPassword);
 
   const technicianProcurement = await expectOk(await fetch(`${baseUrl}/api/procurement`, { headers: { cookie: changedStaffCookie } }), "Technician procurement access");
+  const technicianTestRuns = await expectOk(await fetch(`${baseUrl}/api/test-runs`, { headers: { cookie: changedStaffCookie } }), "Technician connected-test access");
+
+  const testerAgentCreation = await expectOk(await fetch(`${baseUrl}/api/tester-agents`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ name: testerAgentName }),
+  }), "Tester agent creation");
+  const { agent: createdTesterAgent, token: testerAgentToken } = await testerAgentCreation.json();
+  createdTesterAgentId = createdTesterAgent.id;
+  if (!testerAgentToken.startsWith(`${createdTesterAgent.id}.`)) throw new Error("The tester token did not contain its station identity.");
 
   const roleUpdate = await expectOk(await fetch(`${baseUrl}/api/staff/${createdStaff.id}`, {
     method: "PATCH",
@@ -86,6 +99,12 @@ try {
   if (forbiddenAnalytics.status !== 403) throw new Error(`Support analytics permission expected 403, received ${forbiddenAnalytics.status}.`);
   const forbiddenProcurement = await fetch(`${baseUrl}/api/procurement`, { headers: { cookie: changedStaffCookie } });
   if (forbiddenProcurement.status !== 403) throw new Error(`Support procurement permission expected 403, received ${forbiddenProcurement.status}.`);
+  const forbiddenTesterAgents = await fetch(`${baseUrl}/api/tester-agents`, { headers: { cookie: changedStaffCookie } });
+  if (forbiddenTesterAgents.status !== 403) throw new Error(`Support tester-agent permission expected 403, received ${forbiddenTesterAgents.status}.`);
+  const forbiddenTestRuns = await fetch(`${baseUrl}/api/test-runs`, { headers: { cookie: changedStaffCookie } });
+  if (forbiddenTestRuns.status !== 403) throw new Error(`Support connected-test permission expected 403, received ${forbiddenTestRuns.status}.`);
+  const unauthenticatedTesterAgents = await fetch(`${baseUrl}/api/tester-agents`);
+  if (unauthenticatedTesterAgents.status !== 401) throw new Error(`Unauthenticated tester-agent access expected 401, received ${unauthenticatedTesterAgents.status}.`);
 
   const supplierCreation = await expectOk(await fetch(`${baseUrl}/api/procurement/suppliers`, {
     method: "POST",
@@ -128,23 +147,52 @@ try {
 
   const report = JSON.parse(await readFile(new URL("../examples/sample-device-report.json", import.meta.url), "utf8"));
   report.device.serialNumber = serial;
+  const reportJson = JSON.stringify(report);
+  const signature = createHmac("sha256", testerAgentToken).update(reportJson, "utf8").digest("hex");
+  const tamperedUpload = await fetch(`${baseUrl}/api/agent/test-runs`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${testerAgentToken}` },
+    body: JSON.stringify({ reportJson: `${reportJson} `, signature, checks: {} }),
+  });
+  if (tamperedUpload.status !== 401) throw new Error(`Tampered signed report expected 401, received ${tamperedUpload.status}.`);
+  const signedUpload = await expectOk(await fetch(`${baseUrl}/api/agent/test-runs`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${testerAgentToken}` },
+    body: JSON.stringify({
+      reportJson,
+      signature,
+      checks: { display: "pass", keyboard: "pass", camera: "pass", audio: "pass", ports: "pass", wireless: "pass" },
+      notes: "Smoke-test evidence note: cosmetic condition verified.",
+      photos: [{ name: "smoke-proof.png", dataUrl: tinyPng }],
+    }),
+  }), "Signed tester upload");
+  const { testRun: uploadedTestRun } = await signedUpload.json();
+  if (!uploadedTestRun.signatureVerified || uploadedTestRun.serial !== serial) throw new Error("The tester upload was not marked as signature verified.");
+  const replayUpload = await fetch(`${baseUrl}/api/agent/test-runs`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${testerAgentToken}` },
+    body: JSON.stringify({ reportJson, signature }),
+  });
+  if (replayUpload.status !== 409) throw new Error(`Signed report replay expected 409, received ${replayUpload.status}.`);
+  const connectedInbox = await expectOk(await fetch(`${baseUrl}/api/test-runs`, { headers: { cookie } }), "Connected report inbox");
+  const connectedInboxPayload = await connectedInbox.json();
+  if (!connectedInboxPayload.testRuns.some((item) => item.id === uploadedTestRun.id && item.signatureVerified && item.serial === serial)) throw new Error("The signed upload did not reach the connected report inbox.");
   const imported = await expectOk(await fetch(`${baseUrl}/api/reports`, {
     method: "POST",
     headers: { "content-type": "application/json", cookie },
     body: JSON.stringify({
-      report,
+      testRunId: uploadedTestRun.id,
       checks: { display: "pass", keyboard: "pass", camera: "pass", audio: "pass", ports: "pass", wireless: "pass" },
       notes: "Smoke-test evidence note: cosmetic condition verified.",
-      photos: [{
-        name: "smoke-proof.png",
-        dataUrl: tinyPng,
-      }],
+      photos: [{ name: "smoke-proof.png", dataUrl: tinyPng }],
     }),
   }), "Report import");
   const { device } = await imported.json();
   createdDeviceId = device.id;
   if (device.lifecycleStatus !== "Ready" || device.sale || device.warrantyEnds) throw new Error("A new verified passport did not enter the Ready lifecycle state.");
   if (device.diagnostics?.batteryCycleCount !== 184 || device.diagnostics?.storagePowerOnHours !== 1842 || device.diagnostics?.cpuStressPassed !== true || device.diagnostics?.cpuStressCompletedWorkers !== 4 || device.diagnostics?.cpuPeakTemperatureC !== 72) throw new Error("Tester V2 evidence was not preserved on the device record.");
+  const importedInbox = await expectOk(await fetch(`${baseUrl}/api/test-runs`, { headers: { cookie } }), "Imported report removal");
+  if ((await importedInbox.json()).testRuns.some((item) => item.id === uploadedTestRun.id)) throw new Error("An imported connected report remained in the pending inbox.");
 
   const taskCreation = await expectOk(await fetch(`${baseUrl}/api/procurement/intakes/${createdIntake.id}/tasks`, {
     method: "POST",
@@ -436,6 +484,14 @@ try {
     analyticsExport: analyticsExport.status,
     analyticsProtected: unauthenticatedAnalytics.status,
     technicianProcurement: technicianProcurement.status,
+    technicianTestRuns: technicianTestRuns.status,
+    testerAgentCreate: testerAgentCreation.status,
+    signedUpload: signedUpload.status,
+    tamperedUploadDenied: tamperedUpload.status,
+    replayUploadDenied: replayUpload.status,
+    connectedInbox: connectedInbox.status,
+    supportTesterAgentsDenied: forbiddenTesterAgents.status,
+    supportTestRunsDenied: forbiddenTestRuns.status,
     supportProcurementDenied: forbiddenProcurement.status,
     supplierCreate: supplierCreation.status,
     supportSupplierDenied: forbiddenSupplierCreation.status,
@@ -455,18 +511,19 @@ try {
 } finally {
   const database = new DatabaseSync(new URL("../.data/device-passport.db", import.meta.url));
   database.exec("PRAGMA foreign_keys = ON");
+  const testerAgentResult = database.prepare("DELETE FROM tester_agents WHERE id = ? OR name = ?").run(createdTesterAgentId, testerAgentName);
   const supplierResult = database.prepare("DELETE FROM suppliers WHERE id = ? OR name = ?").run(createdSupplierId, supplierName);
   const deviceResult = database.prepare("DELETE FROM devices WHERE serial = ?").run(serial);
   const staffResult = database.prepare("DELETE FROM staff_users WHERE email = ?").run(staffEmail);
   const notificationResult = database.prepare("DELETE FROM notification_queue WHERE entity_id = ? OR entity_id = ?").run(createdDeviceId, createdClaimId);
   const auditResult = database.prepare(`
     DELETE FROM audit_events
-    WHERE actor = ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ?
-  `).run(staffEmail, `%${staffEmail}%`, `%${serial}%`, `%${createdDeviceId}%`, `%${createdClaimId}%`, `%${createdSupplierId}%`, `%${createdIntakeId}%`, `%${supplierName}%`);
+    WHERE actor = ? OR actor = ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ? OR summary LIKE ?
+  `).run(staffEmail, testerAgentName, `%${staffEmail}%`, `%${serial}%`, `%${createdDeviceId}%`, `%${createdClaimId}%`, `%${createdSupplierId}%`, `%${createdIntakeId}%`, `%${supplierName}%`, `%${testerAgentName}%`);
   const backupAudit = database.prepare("DELETE FROM audit_events WHERE summary LIKE ?");
   let backupAuditChanges = 0;
   for (const backupName of createdBackupNames) backupAuditChanges += Number(backupAudit.run(`%${backupName}%`).changes);
   database.close();
   for (const backupName of createdBackupNames) await rm(new URL(`../.data/backups/${backupName}`, import.meta.url), { force: true });
-  console.log(`Cleaned smoke-test data: ${supplierResult.changes} supplier, ${deviceResult.changes} device, ${staffResult.changes} staff, ${notificationResult.changes} notifications, ${Number(auditResult.changes) + backupAuditChanges} audit events, ${createdBackupNames.length} backups`);
+  console.log(`Cleaned smoke-test data: ${testerAgentResult.changes} tester agent, ${supplierResult.changes} supplier, ${deviceResult.changes} device, ${staffResult.changes} staff, ${notificationResult.changes} notifications, ${Number(auditResult.changes) + backupAuditChanges} audit events, ${createdBackupNames.length} backups`);
 }

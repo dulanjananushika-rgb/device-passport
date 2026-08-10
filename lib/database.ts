@@ -387,6 +387,39 @@ function ensureProcurementSchema(database: DatabaseSync) {
   `);
 }
 
+function ensureTesterSchema(database: DatabaseSync) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS tester_agents (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      token_hash TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      last_seen_at TEXT NOT NULL DEFAULT '',
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS tester_test_runs (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      report_json TEXT NOT NULL,
+      checks_json TEXT NOT NULL DEFAULT '{}',
+      notes TEXT NOT NULL DEFAULT '',
+      photos_json TEXT NOT NULL DEFAULT '[]',
+      signature TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'Pending',
+      received_at TEXT NOT NULL,
+      imported_device_id TEXT,
+      imported_at TEXT NOT NULL DEFAULT '',
+      FOREIGN KEY (agent_id) REFERENCES tester_agents(id) ON DELETE CASCADE,
+      FOREIGN KEY (imported_device_id) REFERENCES devices(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_tester_agents_active ON tester_agents(active, created_at);
+    CREATE INDEX IF NOT EXISTS idx_tester_runs_status ON tester_test_runs(status, received_at);
+    CREATE INDEX IF NOT EXISTS idx_tester_runs_agent ON tester_test_runs(agent_id, received_at);
+  `);
+}
+
 function backfillExistingSales(database: DatabaseSync) {
   const migration = database.prepare("SELECT value FROM app_meta WHERE key = 'phase5_sales_backfill'").get();
   if (migration) return;
@@ -461,6 +494,7 @@ export function getDatabase() {
     ensureOperationsSchema(globalDatabase.devicePassportDb);
     ensureFinanceSchema(globalDatabase.devicePassportDb);
     ensureProcurementSchema(globalDatabase.devicePassportDb);
+    ensureTesterSchema(globalDatabase.devicePassportDb);
     backfillExistingSales(globalDatabase.devicePassportDb);
     correctLegacySaleDates(globalDatabase.devicePassportDb);
     return globalDatabase.devicePassportDb;
@@ -522,6 +556,7 @@ export function getDatabase() {
   ensureOperationsSchema(database);
   ensureFinanceSchema(database);
   ensureProcurementSchema(database);
+  ensureTesterSchema(database);
 
   const insert = database.prepare(`
     INSERT OR IGNORE INTO devices (
@@ -1208,6 +1243,7 @@ export function createDeviceFromReport(
   notes: string,
   photos: InspectionPhotoInput[],
   technician: string,
+  testRunId = "",
 ): DeviceRecord {
   const model = report.device?.model?.trim();
   const serial = report.device?.serialNumber?.trim();
@@ -1262,6 +1298,14 @@ export function createDeviceFromReport(
     const insertPhoto = database.prepare("INSERT INTO device_photos (id, device_id, name, mime_type, data) VALUES (?, ?, ?, ?, ?)");
     for (const photo of preparedPhotos) insertPhoto.run(randomUUID(), device.id, photo.name, photo.mimeType, photo.data);
     linkedIntakeId = linkMatchingStockIntake(database, device, technician);
+    if (testRunId) {
+      const imported = database.prepare(`
+        UPDATE tester_test_runs
+        SET status = 'Imported', imported_device_id = ?, imported_at = ?
+        WHERE id = ? AND status = 'Pending'
+      `).run(device.id, new Date().toISOString(), testRunId);
+      if (Number(imported.changes) !== 1) throw new Error("This connected test report is no longer available.");
+    }
     database.exec("COMMIT");
   } catch (error) {
     database.exec("ROLLBACK");

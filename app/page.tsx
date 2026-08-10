@@ -8,6 +8,7 @@ import { getSystemReadiness } from "../lib/readiness";
 import { Dashboard } from "./ui/Dashboard";
 import { getFinanceAnalytics } from "../lib/analytics";
 import { getProcurementDashboard } from "../lib/procurement";
+import { listPendingTestRuns, listTesterAgents } from "../lib/tester-store";
 
 export const metadata: Metadata = {
   title: "DevicePassport | Verified device health",
@@ -35,6 +36,8 @@ export default async function Home() {
       initialSystem={ownerData ? getSystemReadiness() : null}
       initialAnalytics={ownerData ? getFinanceAnalytics() : null}
       initialProcurement={session.role !== "Support" ? getProcurementDashboard(ownerData) : null}
+      initialTestRuns={session.role !== "Support" ? listPendingTestRuns() : []}
+      initialTesterAgents={ownerData ? listTesterAgents() : []}
       session={session}
     />
   );

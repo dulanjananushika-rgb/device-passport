@@ -33,6 +33,8 @@ DevicePassport is an independent shop system for refurbished laptop health repor
 - Docker deployment with a persistent database/backup volume
 - Windows PowerShell diagnostic collector
 - Tester V2 battery-cycle, SSD power-on-hour/temperature/wear, memory-load, and CPU stability evidence
+- Tester V3 Windows agent with one-click tests, HMAC-signed uploads, device photos, and an offline retry queue
+- Connected report inbox plus Owner-managed, revocable per-station credentials
 - Consolidated service history on the buyer's private warranty QR card
 
 ## Run locally
@@ -149,7 +151,24 @@ Purchase price and supplier profit fields are Owner-only. Technicians receive th
 - A fresh safety snapshot is always created before replacement, and a failed replacement rolls back to the original live database.
 - Detailed recovery steps are in [`docs/RECOVERY.md`](docs/RECOVERY.md).
 
-## Windows collector
+## Windows tester agent (recommended)
+
+1. Sign in as an Owner and open **Settings -> Windows tester stations**.
+2. Create one station for each Windows test-bench laptop and copy the token shown once.
+3. Copy the `tools/windows` folder to that laptop and start:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\windows\start-device-passport-tester.ps1
+```
+
+4. Enter the standalone DevicePassport server URL and station token. The token is protected with Windows DPAPI for the current Windows user rather than stored as plaintext.
+5. Complete the screen, keyboard, webcam, audio, ports, and wireless checks. Add up to four actual device photos; **Open Camera** launches Windows Camera when a new photo is needed.
+6. Choose **Run full test + upload**. The agent shows each phase while it collects hardware evidence, runs the controlled CPU test, signs the exact report JSON, and uploads it.
+7. Open **New device test -> Connected Windows reports** in the dashboard, select the verified result, review it, and approve the passport. A matching stock-intake serial is linked automatically.
+
+Every upload uses a per-station HMAC-SHA256 signature. The server stores only the token hash, rejects modified reports, revoked tokens, duplicate serials, and replayed signatures, and records the station's last upload. If the server is unavailable, the signed envelope is saved under the current Windows user's local app data and can be sent later with **Retry offline queue**.
+
+## Manual Windows collector fallback
 
 Run this on the laptop being inspected:
 
@@ -159,7 +178,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\windows\collect-device-health.p
 
 Tester V2 applies a short 10-second CPU load by default and records battery cycles, best-effort SSD reliability counters, memory use, CPU load, and available temperature readings. Change the controlled load duration with `-StressSeconds 20`, or use `-StressSeconds 0` when only inventory readings are required.
 
-The collector writes `device-report-<serial>.json`. Import that JSON in the dashboard. Windows and some drive firmware do not expose every temperature, wear, cycle, or power-on-hour field; unavailable evidence is stored and displayed honestly as **Not exposed** rather than guessed.
+The collector writes `device-report-<serial>.json`. Import that JSON through the fallback picker in the dashboard. Windows and some drive firmware do not expose every temperature, wear, cycle, or power-on-hour field; unavailable evidence is stored and displayed honestly as **Not exposed** rather than guessed.
 
 ## Deployment
 

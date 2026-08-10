@@ -42,6 +42,7 @@ dev.err
 
 # typescript
 next-env.d.ts
+*.tsbuildinfo
 /dist/
 /outputs/
 /work/

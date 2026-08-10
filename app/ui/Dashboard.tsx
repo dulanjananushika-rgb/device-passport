@@ -25,6 +25,8 @@ import type { NotificationItem } from "../../lib/notifications";
 import type { FinanceAnalytics } from "../../lib/finance";
 import type { ProcurementDashboard } from "../../lib/procurement-types";
 import { ProcurementPanel } from "./ProcurementPanel";
+import { TesterAgentsPanel } from "./TesterAgentsPanel";
+import type { PendingTestRun, TesterAgent } from "../../lib/tester-types";
 
 type View = "overview" | "procurement" | "devices" | "sales" | "warranties" | "notifications" | "reports" | "analytics" | "staff" | "settings";
 type WizardStage = 1 | 2 | 3;
@@ -53,10 +55,12 @@ type DashboardProps = {
   initialSystem: SystemReadiness | null;
   initialAnalytics: FinanceAnalytics | null;
   initialProcurement: ProcurementDashboard | null;
+  initialTestRuns: PendingTestRun[];
+  initialTesterAgents: TesterAgent[];
   session: StaffSession;
 };
 
-export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees, initialNotifications, initialStaff, initialAudit, initialSettings, initialSystem, initialAnalytics, initialProcurement, session }: DashboardProps) {
+export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees, initialNotifications, initialStaff, initialAudit, initialSettings, initialSystem, initialAnalytics, initialProcurement, initialTestRuns, initialTesterAgents, session }: DashboardProps) {
   const [records, setRecords] = useState(initialDevices);
   const [claims, setClaims] = useState(initialClaims);
   const [notifications, setNotifications] = useState(initialNotifications);
@@ -65,11 +69,14 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
   const [settings, setSettings] = useState(initialSettings);
   const [analytics, setAnalytics] = useState(initialAnalytics);
   const [procurement, setProcurement] = useState(initialProcurement);
+  const [testRuns, setTestRuns] = useState(initialTestRuns);
+  const [testerAgents, setTesterAgents] = useState(initialTesterAgents);
   const [view, setView] = useState<View>("overview");
   const [query, setQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [stage, setStage] = useState<WizardStage>(1);
   const [imported, setImported] = useState<DiagnosticReport | null>(null);
+  const [selectedTestRunId, setSelectedTestRunId] = useState("");
   const [checks, setChecks] = useState<Partial<Record<InspectionKey, CheckStatus>>>({});
   const [notes, setNotes] = useState("");
   const [photos, setPhotos] = useState<InspectionPhotoInput[]>([]);
@@ -104,6 +111,10 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
           throw new Error("The report is missing a device model or serial number.");
         }
         setImported(parsed);
+        setSelectedTestRunId("");
+        setChecks({});
+        setNotes("");
+        setPhotos([]);
         setStage(2);
       } catch (error) {
         setImported(null);
@@ -115,6 +126,26 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
 
   function setCheck(key: InspectionKey, status: CheckStatus) {
     setChecks((current) => ({ ...current, [key]: status }));
+  }
+
+  function selectConnectedRun(run: PendingTestRun) {
+    setImported(run.report);
+    setSelectedTestRunId(run.id);
+    setChecks(run.checks);
+    setNotes(run.notes);
+    setPhotos(run.photos);
+    setImportError("");
+    setStage(2);
+  }
+
+  async function refreshTestRuns() {
+    const response = await fetch("/api/test-runs", { cache: "no-store" });
+    const result = await response.json().catch(() => null);
+    if (!response.ok || !result) {
+      setImportError(result?.error ?? "Connected reports could not be refreshed.");
+      return;
+    }
+    setTestRuns(result.testRuns as PendingTestRun[]);
   }
 
   async function handlePhotos(event: ChangeEvent<HTMLInputElement>) {
@@ -143,6 +174,7 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
     setModalOpen(false);
     setStage(1);
     setImported(null);
+    setSelectedTestRunId("");
     setChecks({});
     setNotes("");
     setPhotos([]);
@@ -158,7 +190,7 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
     const response = await fetch("/api/reports", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ report: imported, checks, notes, photos }),
+      body: JSON.stringify({ report: selectedTestRunId ? undefined : imported, testRunId: selectedTestRunId || undefined, checks, notes, photos }),
     });
     const result = await response.json().catch(() => ({ error: "The server returned an invalid response." }));
     if (!response.ok) {
@@ -169,6 +201,7 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
 
     setRecords((current) => [result.device as DeviceRecord, ...current]);
     setCreatedDevice(result.device as DeviceRecord);
+    if (selectedTestRunId) setTestRuns((current) => current.filter((run) => run.id !== selectedTestRunId));
     setSaving(false);
     if (procurement) await refreshProcurement();
   }
@@ -283,7 +316,7 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
         {view === "reports" && <Reports records={records} />}
         {view === "analytics" && isOwner && analytics && <AnalyticsPanel analytics={analytics} onAnalyticsChange={setAnalytics} onAuditChange={refreshAudit} />}
         {view === "staff" && isOwner && <StaffPanel staff={staff} audit={audit} currentStaffId={session.id} onStaffChange={setStaff} onAuditChange={refreshAudit} />}
-        {view === "settings" && <SettingsPanel settings={settings} session={session} initialSystem={initialSystem} onSettingsChange={setSettings} onAuditChange={refreshAudit} />}
+        {view === "settings" && <SettingsPanel settings={settings} session={session} initialSystem={initialSystem} testerAgents={testerAgents} onTesterAgentsChange={setTesterAgents} onSettingsChange={setSettings} onAuditChange={refreshAudit} />}
       </main>
 
       {modalOpen && (
@@ -298,10 +331,10 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
               {createdDevice ? (
                 <div className="publish-success"><span className="publish-check">OK</span><div className="eyebrow">Published successfully</div><h3>{createdDevice.name}</h3><p>{createdDevice.id} is saved with a Grade {createdDevice.grade} health score of {createdDevice.score}/100.</p><div className="publish-actions"><a className="button secondary" href={`/passport/${createdDevice.id}`}>Open public passport</a><a className="button primary" href={`/label/${createdDevice.id}`}>Print QR label</a></div></div>
               ) : stage === 1 ? (
-                <label className="drop-zone"><span><span className="drop-icon">JSON</span><h3>Import the Windows health report</h3><p>Run the DevicePassport collector on the laptop, then select its generated report.</p><span className="button secondary small">Choose report</span><input className="file-input" type="file" accept="application/json,.json" onChange={handleImport} /></span></label>
+                <div className="connected-import"><div className="wizard-title"><div><h3>Connected Windows reports</h3><p>Cryptographically verified reports waiting for technician approval.</p></div><button className="button secondary small" type="button" onClick={refreshTestRuns}>Refresh</button></div>{testRuns.length ? <div className="connected-run-list">{testRuns.map((run) => <button type="button" key={run.id} onClick={() => selectConnectedRun(run)}><span className="signed-mark">Verified</span><strong>{run.model}</strong><small>{run.serial} · {run.agentName}</small><time>{formatConnectedDate(run.receivedAt)}</time></button>)}</div> : <div className="connected-empty"><strong>No connected reports waiting</strong><span>Run the Windows tester or use JSON fallback below.</span></div>}<div className="import-divider"><span>or import manually</span></div><label className="drop-zone compact-drop"><span><span className="drop-icon">JSON</span><h3>Choose a collector report</h3><p>Manual fallback for offline or unregistered tester laptops.</p><span className="button secondary small">Choose report</span><input className="file-input" type="file" accept="application/json,.json" onChange={handleImport} /></span></label></div>
               ) : stage === 2 && imported ? (
                 <div className="wizard-section">
-                  <div className="import-success compact"><h3>Tester V2 report connected</h3><div className="import-grid"><div><span>Device</span><strong>{imported.device?.manufacturer} {imported.device?.model}</strong></div><div><span>Serial</span><strong>{imported.device?.serialNumber}</strong></div><div><span>Memory</span><strong>{imported.device?.memoryGB ?? "-"} GB</strong></div><div><span>Battery</span><strong>{imported.battery?.healthPercent ?? "-"}%</strong></div><div><span>Battery cycles</span><strong>{imported.battery?.cycleCount ?? "Not exposed"}</strong></div><div><span>SSD usage</span><strong>{formatHours(imported.storage?.[0]?.powerOnHours)}</strong></div><div><span>CPU stress</span><strong>{formatStress(imported)}</strong></div><div><span>CPU peak</span><strong>{formatTemperature(imported.performance?.stressTest?.peakTemperatureC)}</strong></div></div></div>
+                  <div className="import-success compact"><h3>{selectedTestRunId ? "Signed tester report connected" : "Tester V2 report imported"}</h3>{selectedTestRunId && <span className="signature-note">Signature verified by DevicePassport</span>}<div className="import-grid"><div><span>Device</span><strong>{imported.device?.manufacturer} {imported.device?.model}</strong></div><div><span>Serial</span><strong>{imported.device?.serialNumber}</strong></div><div><span>Memory</span><strong>{imported.device?.memoryGB ?? "-"} GB</strong></div><div><span>Battery</span><strong>{imported.battery?.healthPercent ?? "-"}%</strong></div><div><span>Battery cycles</span><strong>{imported.battery?.cycleCount ?? "Not exposed"}</strong></div><div><span>SSD usage</span><strong>{formatHours(imported.storage?.[0]?.powerOnHours)}</strong></div><div><span>CPU stress</span><strong>{formatStress(imported)}</strong></div><div><span>CPU peak</span><strong>{formatTemperature(imported.performance?.stressTest?.peakTemperatureC)}</strong></div></div></div>
                   <div className="wizard-title"><div><h3>Manual hardware inspection</h3><p>Test every item and record the actual result.</p></div><span>{Object.keys(checks).length}/{inspectionKeys.length} complete</span></div>
                   <div className="inspection-list">{inspectionKeys.map((key) => <InspectionControl key={key} checkKey={key} value={checks[key]} onChange={setCheck} />)}</div>
                   <label className="notes-field">Technician notes<textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Cosmetic marks, replaced parts, or anything the buyer should know" maxLength={800} /></label>
@@ -352,6 +385,11 @@ function formatStress(report: DiagnosticReport) {
   const stress = report.performance?.stressTest;
   if (!stress?.executed) return "Not run";
   return stress.passed ? `Passed · ${stress.durationSeconds ?? "?"} sec` : "Review required";
+}
+
+function formatConnectedDate(value: string) {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : value;
 }
 
 function NavButton({ icon, label, active, onClick }: { icon: string; label: string; active: boolean; onClick: () => void }) {
@@ -673,7 +711,7 @@ function StaffEditor({ member, isCurrent, onUpdated }: { member: StaffAccount; i
   );
 }
 
-function SettingsPanel({ settings, session, initialSystem, onSettingsChange, onAuditChange }: { settings: ShopSettings; session: StaffSession; initialSystem: SystemReadiness | null; onSettingsChange: (settings: ShopSettings) => void; onAuditChange: () => Promise<void> }) {
+function SettingsPanel({ settings, session, initialSystem, testerAgents, onTesterAgentsChange, onSettingsChange, onAuditChange }: { settings: ShopSettings; session: StaffSession; initialSystem: SystemReadiness | null; testerAgents: TesterAgent[]; onTesterAgentsChange: (agents: TesterAgent[]) => void; onSettingsChange: (settings: ShopSettings) => void; onAuditChange: () => Promise<void> }) {
   const [form, setForm] = useState(settings);
   const [settingsError, setSettingsError] = useState("");
   const [settingsSuccess, setSettingsSuccess] = useState("");
@@ -754,6 +792,7 @@ function SettingsPanel({ settings, session, initialSystem, onSettingsChange, onA
           </section>
 
           {session.role === "Owner" && <section className="panel settings-card"><div className="panel-head"><div><h3 className="panel-title">Warranty defaults</h3><p className="panel-subtitle">Applied automatically to every new device passport</p></div></div><div className="settings-fields"><label>Coverage duration<select value={form.warrantyMonths} onChange={(event) => change("warrantyMonths", Number(event.target.value))}>{[1,3,6,12,18,24,36].map((months) => <option value={months} key={months}>{months} month{months === 1 ? "" : "s"}</option>)}</select></label><label className="full-field">Public warranty terms<textarea value={form.warrantyTerms} maxLength={1200} onChange={(event) => change("warrantyTerms", event.target.value)} /></label></div>{settingsSuccess && <div className="success-box">{settingsSuccess}</div>}<button className="button primary" type="button" disabled={saving} onClick={saveSettings}>{saving ? "Saving settings…" : "Save shop settings"}</button></section>}
+          {session.role === "Owner" && <TesterAgentsPanel agents={testerAgents} onAgentsChange={onTesterAgentsChange} onAuditChange={onAuditChange} />}
           {session.role === "Owner" && initialSystem && <RecoveryPanel initialSystem={initialSystem} onAuditChange={onAuditChange} />}
         </div>
 
