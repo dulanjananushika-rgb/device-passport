@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: device-passport
+    runtime: docker
+    repo: https://github.com/dulanjananushika-rgb/device-passport
+    branch: main
+    region: singapore
+    plan: starter
+    numInstances: 1
+    healthCheckPath: /api/health
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    disk:
+      name: device-passport-data
+      mountPath: /app/.data
+      sizeGB: 1
+    envVars:
+      - key: DEVICEPASSPORT_ADMIN_EMAIL
+        sync: false
+      - key: DEVICEPASSPORT_ADMIN_PASSWORD
+        sync: false
+      - key: DEVICEPASSPORT_SESSION_SECRET
+        generateValue: true

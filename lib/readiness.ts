@@ -31,7 +31,8 @@ export function getSystemReadiness() {
   const backupAgeHours = latest ? (Date.now() - Date.parse(latest.createdAt)) / 3_600_000 : Number.POSITIVE_INFINITY;
   const production = process.env.NODE_ENV === "production";
   const sessionSecret = process.env.DEVICEPASSPORT_SESSION_SECRET ?? "";
-  const publicUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+  const publicUrl = process.env.NEXT_PUBLIC_APP_URL
+    ?? (process.env.RENDER_EXTERNAL_HOSTNAME ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}` : "");
   const adminEmail = process.env.DEVICEPASSPORT_ADMIN_EMAIL ?? "";
   const adminPassword = process.env.DEVICEPASSPORT_ADMIN_PASSWORD ?? "";
   const checks: ReadinessCheck[] = [

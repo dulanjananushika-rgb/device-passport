@@ -16,7 +16,8 @@ const checks = [
   },
   {
     name: "NEXT_PUBLIC_APP_URL",
-    ok: /^https:\/\/[^\s/]+(?:\/.*)?$/.test(process.env.NEXT_PUBLIC_APP_URL ?? ""),
+    ok: /^https:\/\/[^\s/]+(?:\/.*)?$/.test(process.env.NEXT_PUBLIC_APP_URL ?? "")
+      || Boolean(process.env.RENDER_EXTERNAL_HOSTNAME),
     help: "Set the deployed HTTPS application origin.",
   },
 ];

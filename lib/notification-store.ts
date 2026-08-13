@@ -101,7 +101,8 @@ function ensureNotificationSchema(database: DatabaseSync) {
 }
 
 function publicBaseUrl() {
-  return (process.env.DEVICEPASSPORT_PUBLIC_URL?.trim() || "http://localhost:3000").replace(/\/$/, "");
+  const renderUrl = process.env.RENDER_EXTERNAL_HOSTNAME ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}` : "";
+  return (process.env.DEVICEPASSPORT_PUBLIC_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim() || renderUrl || "http://localhost:3000").replace(/\/$/, "");
 }
 
 function formatDate(value: string) {

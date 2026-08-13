@@ -1,8 +1,14 @@
 import { readFile, rm } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { createHmac } from "node:crypto";
+import { pathToFileURL } from "node:url";
 
 const baseUrl = process.env.DEVICEPASSPORT_TEST_URL ?? "http://localhost:3000";
+const databaseUrl = process.env.DEVICEPASSPORT_TEST_DATABASE_PATH
+  ? pathToFileURL(process.env.DEVICEPASSPORT_TEST_DATABASE_PATH)
+  : new URL("../.data/device-passport.db", import.meta.url);
+const ownerEmail = process.env.DEVICEPASSPORT_TEST_ADMIN_EMAIL ?? "owner@lapmart.lk";
+const ownerPassword = process.env.DEVICEPASSPORT_TEST_ADMIN_PASSWORD ?? "devicepass";
 const runId = Date.now();
 const serial = `CODEX-SMOKE-${runId}`;
 const staffEmail = `smoke-${runId}@example.com`;
@@ -37,7 +43,7 @@ async function loginAs(email, password) {
 }
 
 try {
-  const { response: login, cookie } = await loginAs("owner@lapmart.lk", "devicepass");
+  const { response: login, cookie } = await loginAs(ownerEmail, ownerPassword);
 
   const healthResponse = await expectOk(await fetch(`${baseUrl}/api/health`), "Public health check");
   const health = await healthResponse.json();
@@ -438,14 +444,14 @@ try {
   const unconfirmedRestore = await fetch(`${baseUrl}/api/backups/restore`, {
     method: "POST",
     headers: { "content-type": "application/json", cookie, "x-forwarded-for": restoreTestIp },
-    body: JSON.stringify({ name: backup.name, confirmation: "restore", password: "devicepass" }),
+    body: JSON.stringify({ name: backup.name, confirmation: "restore", password: ownerPassword }),
   });
   if (unconfirmedRestore.status !== 400) throw new Error(`Unconfirmed restore expected 400, received ${unconfirmedRestore.status}.`);
 
   const restoreResponse = await expectOk(await fetch(`${baseUrl}/api/backups/restore`, {
     method: "POST",
     headers: { "content-type": "application/json", cookie, "x-forwarded-for": restoreTestIp },
-    body: JSON.stringify({ name: backup.name, confirmation: "RESTORE", password: "devicepass" }),
+    body: JSON.stringify({ name: backup.name, confirmation: "RESTORE", password: ownerPassword }),
   }), "Verified database restore");
   const { result: restoreResult } = await restoreResponse.json();
   createdBackupNames.push(restoreResult.safetyBackup.name);
@@ -540,7 +546,7 @@ try {
     claimId: claim.id,
   }, null, 2));
 } finally {
-  const database = new DatabaseSync(new URL("../.data/device-passport.db", import.meta.url));
+  const database = new DatabaseSync(databaseUrl);
   database.exec("PRAGMA foreign_keys = ON");
   const testerAgentResult = database.prepare("DELETE FROM tester_agents WHERE id = ? OR name = ?").run(createdTesterAgentId, testerAgentName);
   const supplierResult = database.prepare("DELETE FROM suppliers WHERE id = ? OR name = ?").run(createdSupplierId, supplierName);
