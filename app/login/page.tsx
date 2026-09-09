@@ -4,6 +4,7 @@ import { getSession } from "../../lib/auth";
 import { getShopSettings } from "../../lib/database";
 import { ShopBrand } from "../ui/ShopBrand";
 import { LoginForm } from "./LoginForm";
+import { isPortfolioDemo } from "../../lib/demo";
 
 export const metadata: Metadata = {
   title: "Shop sign in",
@@ -30,7 +31,7 @@ export default async function LoginPage() {
         </div>
       </section>
       <section className="login-panel">
-        <LoginForm shopName={settings.shopName} />
+        <LoginForm shopName={settings.shopName} demo={isPortfolioDemo()} />
       </section>
     </main>
   );

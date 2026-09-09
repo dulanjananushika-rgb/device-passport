@@ -36,6 +36,8 @@ import {
 } from "./operations";
 import type { DeviceSale, SaleActivationInput } from "./sales";
 import { parseLkrToCents } from "./finance";
+import { DEMO_EMAIL, DEMO_PASSWORD, isPortfolioDemo } from "./demo";
+import { seedPortfolioDemo } from "./demo-seed";
 
 type DeviceRow = {
   id: string;
@@ -310,8 +312,8 @@ function ensureOperationsSchema(database: DatabaseSync) {
   const staffCount = database.prepare("SELECT COUNT(*) AS count FROM staff_users").get() as { count: number };
   if (staffCount.count === 0) {
     const development = process.env.NODE_ENV !== "production";
-    const email = (process.env.DEVICEPASSPORT_ADMIN_EMAIL ?? (development ? "owner@lapmart.lk" : "")).trim().toLowerCase();
-    const password = process.env.DEVICEPASSPORT_ADMIN_PASSWORD ?? (development ? "devicepass" : "");
+    const email = (isPortfolioDemo() ? DEMO_EMAIL : process.env.DEVICEPASSPORT_ADMIN_EMAIL ?? (development ? "owner@lapmart.lk" : "")).trim().toLowerCase();
+    const password = isPortfolioDemo() ? DEMO_PASSWORD : process.env.DEVICEPASSPORT_ADMIN_PASSWORD ?? (development ? "devicepass" : "");
     if (email && password) {
       database.prepare(`
         INSERT INTO staff_users (id, name, email, role, password_hash, active, created_at, updated_at)
@@ -577,6 +579,8 @@ export function getDatabase() {
   backfillExistingSales(database);
   correctLegacySaleDates(database);
 
+  if (isPortfolioDemo()) seedPortfolioDemo(database);
+
   globalDatabase.devicePassportDb = database;
   return database;
 }
@@ -794,6 +798,7 @@ export function updateStaffAccount(id: string, input: { name: string; role: Staf
   const database = getDatabase();
   const current = database.prepare("SELECT * FROM staff_users WHERE id = ?").get(id) as unknown as StaffRow | undefined;
   if (!current) throw new Error("Staff account not found.");
+  if (isPortfolioDemo() && current.email === DEMO_EMAIL) throw new Error("The shared demo account cannot be changed. Create another sample staff account to try this feature.");
   const name = input.name.trim();
   if (name.length < 2 || name.length > 100) throw new Error("Staff name must contain 2 to 100 characters.");
   if (!isStaffRole(input.role)) throw new Error("Choose a valid staff role.");
@@ -812,6 +817,7 @@ export function changeStaffPassword(id: string, password: string, actor: string)
   const database = getDatabase();
   const current = database.prepare("SELECT email FROM staff_users WHERE id = ?").get(id) as { email: string } | undefined;
   if (!current) throw new Error("Staff account not found.");
+  if (isPortfolioDemo() && current.email === DEMO_EMAIL) throw new Error("The shared demo password cannot be changed. Try this with another sample staff account.");
   database.prepare("UPDATE staff_users SET password_hash = ?, updated_at = ? WHERE id = ?")
     .run(hashPassword(password), new Date().toISOString(), id);
   recordAuditEvent(actor, "account.password", `Changed password for ${current.email}.`);

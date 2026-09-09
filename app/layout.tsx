@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
+import { isPortfolioDemo } from "../lib/demo";
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
@@ -42,7 +43,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {isPortfolioDemo() && <aside className="portfolio-demo-banner"><strong>Portfolio demo</strong><span>Shared sample data · Changes may reset · Use fictional information only</span></aside>}
+        {children}
+      </body>
     </html>
   );
 }

@@ -1,5 +1,6 @@
 import { listDatabaseBackups, type BackupSummary } from "./backups";
 import { databaseQuickCheck } from "./database";
+import { DEMO_EMAIL, DEMO_PASSWORD, isPortfolioDemo } from "./demo";
 
 export type ReadinessCheck = {
   key: string;
@@ -33,8 +34,8 @@ export function getSystemReadiness() {
   const sessionSecret = process.env.DEVICEPASSPORT_SESSION_SECRET ?? "";
   const publicUrl = process.env.NEXT_PUBLIC_APP_URL
     ?? (process.env.RENDER_EXTERNAL_HOSTNAME ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}` : "");
-  const adminEmail = process.env.DEVICEPASSPORT_ADMIN_EMAIL ?? "";
-  const adminPassword = process.env.DEVICEPASSPORT_ADMIN_PASSWORD ?? "";
+  const adminEmail = isPortfolioDemo() ? DEMO_EMAIL : process.env.DEVICEPASSPORT_ADMIN_EMAIL ?? "";
+  const adminPassword = isPortfolioDemo() ? DEMO_PASSWORD : process.env.DEVICEPASSPORT_ADMIN_PASSWORD ?? "";
   const checks: ReadinessCheck[] = [
     { key: "database", label: "Database integrity", ok: database.ok, detail: database.ok ? "SQLite quick check passed." : database.message },
     { key: "backups", label: "Recent recovery point", ok: !backupError && backupAgeHours <= 48, detail: backupError || (latest ? `Latest ${latest.kind.toLowerCase()} snapshot is ${humanAge(backupAgeHours)} old.` : "No database snapshot exists yet.") },

@@ -2,6 +2,7 @@
 
 import { ChangeEvent, useMemo, useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import type { DeviceRecord } from "../data/devices";
 import type { StaffSession } from "../../lib/auth";
 import { claimPriorities, claimStatuses, type ClaimAssignee, type ClaimPriority, type ClaimStatus, type WarrantyClaimSummary } from "../../lib/claims";
@@ -61,6 +62,7 @@ type DashboardProps = {
 };
 
 export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees, initialNotifications, initialStaff, initialAudit, initialSettings, initialSystem, initialAnalytics, initialProcurement, initialTestRuns, initialTesterAgents, session }: DashboardProps) {
+  const router = useRouter();
   const [records, setRecords] = useState(initialDevices);
   const [claims, setClaims] = useState(initialClaims);
   const [notifications, setNotifications] = useState(initialNotifications);
@@ -208,7 +210,8 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
 
   async function signOut() {
     await fetch("/api/auth/logout", { method: "POST" });
-    window.location.assign("/login");
+    router.push("/login");
+    router.refresh();
   }
 
   const title = viewTitles[view];

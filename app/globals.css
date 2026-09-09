@@ -4408,3 +4408,20 @@ a {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
 }
+
+.portfolio-demo-banner {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 14px;
+  padding: 10px 18px;
+  background: #142c37;
+  color: #e5f7f3;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+@media print {
+  .portfolio-demo-banner { display: none; }
+}

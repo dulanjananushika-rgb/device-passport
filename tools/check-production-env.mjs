@@ -1,12 +1,12 @@
 const checks = [
   {
     name: "DEVICEPASSPORT_ADMIN_EMAIL",
-    ok: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(process.env.DEVICEPASSPORT_ADMIN_EMAIL ?? ""),
+    ok: process.env.DEVICEPASSPORT_DEMO === "true" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(process.env.DEVICEPASSPORT_ADMIN_EMAIL ?? ""),
     help: "Set a valid Owner seed email.",
   },
   {
     name: "DEVICEPASSPORT_ADMIN_PASSWORD",
-    ok: (process.env.DEVICEPASSPORT_ADMIN_PASSWORD ?? "").length >= 12,
+    ok: process.env.DEVICEPASSPORT_DEMO === "true" || (process.env.DEVICEPASSPORT_ADMIN_PASSWORD ?? "").length >= 12,
     help: "Use an Owner seed password with at least 12 characters.",
   },
   {
