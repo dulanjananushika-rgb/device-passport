@@ -11,7 +11,8 @@
     "start": "next start",
     "check:production": "node --env-file-if-exists=.env.production tools/check-production-env.mjs",
     "lint": "eslint . --ignore-pattern .next --ignore-pattern dist",
-    "smoke": "node tools/smoke-test.mjs"
+    "smoke": "node tools/smoke-test.mjs",
+    "package:release": "node tools/package-release.mjs"
   },
   "dependencies": {
     "next": "16.3.4",

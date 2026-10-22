@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DevicePassport — Official Product Documentation & Installation Manual</title>
+  <style>
+    :root {
+      --primary: #1c5c47;
+      --primary-dark: #123d2f;
+      --primary-light: #e8f5ee;
+      --accent: #d97706;
+      --ink: #111827;
+      --muted: #4b5563;
+      --border: #e5e7eb;
+      --bg: #f9fafb;
+      --card-bg: #ffffff;
+      --sidebar-w: 280px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+      line-height: 1.65;
+      display: flex;
+    }
+    /* Sidebar */
+    .sidebar {
+      width: var(--sidebar-w);
+      height: 100vh;
+      position: sticky;
+      top: 0;
+      background: #142c22;
+      color: #e5f7ed;
+      padding: 28px 20px;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 28px;
+      text-decoration: none;
+      color: #fff;
+    }
+    .brand-badge {
+      background: #258163;
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 18px;
+    }
+    .brand h2 { font-size: 16px; font-weight: 700; line-height: 1.2; }
+    .brand span { font-size: 11px; color: #a2cfb9; text-transform: uppercase; letter-spacing: 0.05em; }
+    .nav-group { margin-bottom: 22px; }
+    .nav-title { font-size: 11px; text-transform: uppercase; color: #72a98f; font-weight: 700; letter-spacing: 0.08em; margin-bottom: 8px; }
+    .nav-group a {
+      display: block;
+      padding: 7px 10px;
+      color: #d1ebd9;
+      text-decoration: none;
+      font-size: 13px;
+      border-radius: 6px;
+      transition: background 0.15s;
+    }
+    .nav-group a:hover { background: rgba(255,255,255,0.08); color: #fff; }
+    .badge-v {
+      display: inline-block;
+      font-size: 10px;
+      background: rgba(255,255,255,0.15);
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-left: 6px;
+    }
+    /* Main Content */
+    .content {
+      flex: 1;
+      max-width: 920px;
+      padding: 48px 56px 96px;
+      background: #fff;
+      min-height: 100vh;
+      border-left: 1px solid var(--border);
+    }
+    .hero-banner {
+      background: linear-gradient(135deg, #1c5c47, #123d2f);
+      color: #fff;
+      padding: 32px;
+      border-radius: 16px;
+      margin-bottom: 40px;
+      box-shadow: 0 4px 20px rgba(28,92,71,0.15);
+    }
+    .hero-banner h1 { font-size: 28px; font-weight: 800; margin-bottom: 8px; }
+    .hero-banner p { font-size: 15px; color: #d4ebd9; max-width: 650px; }
+    .hero-chips { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+    .chip { background: rgba(255,255,255,0.15); font-size: 12px; padding: 4px 10px; border-radius: 6px; }
+    h2 {
+      font-size: 22px;
+      font-weight: 700;
+      color: #111827;
+      margin: 40px 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    h3 { font-size: 16px; font-weight: 600; color: #1c5c47; margin: 24px 0 10px; }
+    p, li { font-size: 14.5px; color: var(--muted); margin-bottom: 12px; }
+    ul, ol { padding-left: 22px; margin-bottom: 16px; }
+    li { margin-bottom: 6px; }
+    pre {
+      background: #111827;
+      color: #f3f4f6;
+      padding: 16px;
+      border-radius: 10px;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 13px;
+      overflow-x: auto;
+      margin: 14px 0 20px;
+      border: 1px solid #374151;
+    }
+    code {
+      font-family: "Courier New", Courier, monospace;
+      background: #f3f4f6;
+      color: #1c5c47;
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    pre code { background: none; color: inherit; padding: 0; }
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+      margin: 20px 0;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      background: #fafcfb;
+    }
+    .card strong { display: block; font-size: 14px; color: #111827; margin-bottom: 6px; }
+    .card p { font-size: 13px; color: #6b7280; margin: 0; }
+    .alert {
+      padding: 14px 18px;
+      border-radius: 10px;
+      margin: 18px 0;
+      font-size: 13.5px;
+    }
+    .alert-info { background: #eef7f2; border: 1px solid #c2e0d1; color: #15573e; }
+    .alert-warning { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      font-size: 13.5px;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+    }
+    th { background: #f9fafb; font-weight: 600; color: #374151; }
+    .btn-demo {
+      display: inline-block;
+      background: #1c5c47;
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <a href="#" class="brand">
+      <div class="brand-badge">D</div>
+      <div>
+        <h2>DevicePassport</h2>
+        <span>Commercial v1.0.0</span>
+      </div>
+    </a>
+
+    <div class="nav-group">
+      <div class="nav-title">Getting Started</div>
+      <a href="#overview">Overview & Architecture</a>
+      <a href="#quickstart">3-Minute Quick Start</a>
+      <a href="#docker">Docker Deployment</a>
+      <a href="#env">Environment Variables</a>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-title">Hardware Agent</div>
+      <a href="#tester-agent">Windows Tester V4 Agent</a>
+      <a href="#interactive-tests">6-Step Interactive Tests</a>
+      <a href="#security-signatures">HMAC-SHA256 Signatures</a>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-title">Shop Workflows</div>
+      <a href="#rbac">Role-Based Access (RBAC)</a>
+      <a href="#intake">Stock Intake & 60×30 Labels</a>
+      <a href="#passports">Public Passports & 40×25 QR</a>
+      <a href="#warranty">Digital Warranty & Claims</a>
+      <a href="#analytics">P&L Financial Analytics</a>
+      <a href="#backups">Snapshots & Safety Restores</a>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-title">Deployment & Help</div>
+      <a href="#cloud-deploy">Deploy to Netlify / VPS</a>
+      <a href="#faq">FAQ & Troubleshooting</a>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="content">
+    <div class="hero-banner">
+      <h1>DevicePassport Documentation</h1>
+      <p>The enterprise operating system for refurbished laptop dealers, repair shops, and computer service centers.</p>
+      <div class="hero-chips">
+        <span class="chip">Next.js 16 (App Router)</span>
+        <span class="chip">React 19</span>
+        <span class="chip">Node native SQLite</span>
+        <span class="chip">Windows Diagnostic Agent</span>
+        <span class="chip">Digital QR Passports</span>
+      </div>
+    </div>
+
+    <!-- Section 1 -->
+    <section id="overview">
+      <h2>1. Overview & Architecture</h2>
+      <p><strong>DevicePassport</strong> is a full-stack hardware health certification, digital warranty, and inventory management platform designed specifically for the refurbished computer and laptop retail market.</p>
+      <p>Unlike standard generic web applications that require external database provisioning, DevicePassport leverages <strong>Node.js built-in <code>node:sqlite</code></strong>. It delivers zero-latency local database storage with daily automated point-in-time snapshots and zero third-party cloud database costs.</p>
+
+      <div class="card-grid">
+        <div class="card">
+          <strong>⚡ Hardware Agent</strong>
+          <p>Custom Windows PowerShell V4 Agent for direct battery cycle, SSD SMART, and stress test inspection.</p>
+        </div>
+        <div class="card">
+          <strong>🏷️ Physical Asset QR Labels</strong>
+          <p>Printable 40 × 25 mm lid stickers and 60 × 30 mm intake labels with tamper-proof signatures.</p>
+        </div>
+        <div class="card">
+          <strong>🛡️ Digital Warranties</strong>
+          <p>Customer self-service claim portal with photo uploads and live private tracking timeline.</p>
+        </div>
+        <div class="card">
+          <strong>📊 Precision P&L Finance</strong>
+          <p>Integer-cent accounting deducting purchase price, parts, and warranty costs for exact gross margin.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 2 -->
+    <section id="quickstart">
+      <h2>2. 3-Minute Quick Start</h2>
+      <p>Ensure you have <strong>Node.js 22.13.0 or higher</strong> installed on your system.</p>
+
+      <h3>Step 1: Install Dependencies</h3>
+      <pre><code>cd device-passport
+npm install</code></pre>
+
+      <h3>Step 2: Start Development Server</h3>
+      <pre><code>npm run dev</code></pre>
+      <p>Open <a href="http://localhost:3000" target="_blank">http://localhost:3000</a> in your browser.</p>
+
+      <div class="alert alert-info">
+        <strong>Default Admin Credentials (Local Development):</strong><br>
+        Email: <code>owner@lapmart.lk</code> (or <code>demo@devicepassport.example</code>)<br>
+        Password: <code>devicepass</code>
+      </div>
+
+      <h3>Step 3: Run Smoke Verification</h3>
+      <p>Verify that your local SQLite database, security headers, restore snapshots, and rate-limiting are 100% operational:</p>
+      <pre><code>npm run smoke</code></pre>
+    </section>
+
+    <!-- Section 3 -->
+    <section id="docker">
+      <h2>3. Docker Deployment (Recommended for Production)</h2>
+      <p>DevicePassport includes a production-ready <code>Dockerfile</code> and <code>compose.yaml</code>. The database is stored inside a persistent volume so updates never overwrite your records.</p>
+
+      <pre><code># Build and start container in background
+docker compose up -d --build
+
+# Inspect running container logs
+docker compose logs -f</code></pre>
+      <p>Your application is now live at <code>http://localhost:3000</code> with health checks running every 30 seconds.</p>
+    </section>
+
+    <!-- Section 4 -->
+    <section id="env">
+      <h2>4. Environment Configuration</h2>
+      <p>Copy <code>.env.example</code> to <code>.env.production</code> for production deployments:</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Variable</th>
+            <th>Description</th>
+            <th>Default / Example</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>DEVICEPASSPORT_ADMIN_EMAIL</code></td>
+            <td>The master Shop Owner email</td>
+            <td><code>owner@yourshop.com</code></td>
+          </tr>
+          <tr>
+            <td><code>DEVICEPASSPORT_ADMIN_PASSWORD</code></td>
+            <td>Master Shop Owner password (min 12 chars)</td>
+            <td><code>YourStrongPassword123!</code></td>
+          </tr>
+          <tr>
+            <td><code>DEVICEPASSPORT_SESSION_SECRET</code></td>
+            <td>32+ character HMAC session signing key</td>
+            <td><code>openssl rand -base64 32</code></td>
+          </tr>
+          <tr>
+            <td><code>NEXT_PUBLIC_APP_URL</code></td>
+            <td>Public HTTPS domain of your shop</td>
+            <td><code>https://passport.yourshop.com</code></td>
+          </tr>
+          <tr>
+            <td><code>DEVICEPASSPORT_DATABASE_PATH</code></td>
+            <td>Persistent SQLite database file path</td>
+            <td><code>/app/.data/device-passport.db</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Section 5 -->
+    <section id="tester-agent">
+      <h2>5. Windows Tester V4 Hardware Agent</h2>
+      <p>The crown jewel of DevicePassport is the native Windows Hardware Diagnostic Agent. Technicians run this tool directly on laptops being tested before sale.</p>
+
+      <h3>Installation on Technician Laptops</h3>
+      <ol>
+        <li>Sign in as Owner and go to <strong>Settings → Windows tester stations</strong>.</li>
+        <li>Click <strong>Create station</strong> (e.g., "Bench Laptop #1") and copy the Station Token.</li>
+        <li>Download the agent bundle from the dashboard or copy <code>tools/windows</code> to a USB stick.</li>
+        <li>Double-click <code>install-device-passport-tester.cmd</code> on the laptop. It installs for the current user and adds desktop shortcuts.</li>
+        <li>Enter the shop server URL and paste the Station Token. The token is encrypted using <strong>Windows DPAPI</strong> for the current user.</li>
+      </ol>
+    </section>
+
+    <!-- Section 6 -->
+    <section id="interactive-tests">
+      <h2>6. Guided Interactive Hardware Checks</h2>
+      <p>When running the agent, the technician is guided through 6 critical hardware validations:</p>
+      <ul>
+        <li><strong>6-Color Dead-Pixel Inspection:</strong> Full-screen cycling (Red, Green, Blue, White, Black, Gray) to reveal panel defects.</li>
+        <li><strong>60-Key Keyboard Matrix Tester:</strong> Real-time keypress listener with visual highlight of stuck or non-responsive keys.</li>
+        <li><strong>Native Camera Preview & Capture:</strong> Captures webcam photo evidence stored directly in the signed diagnostic report.</li>
+        <li><strong>Stereo L/R Audio Tone:</strong> Dual-channel frequency tone generation to verify both left and right speaker cones.</li>
+        <li><strong>USB & Port Detection:</strong> Automatic hardware discovery of connected flash drives, external monitors, and chargers.</li>
+        <li><strong>Battery & SSD SMART Telemetry:</strong> Collects exact charge cycle counts, wear level (%), power-on hours, and drive temperature.</li>
+      </ul>
+    </section>
+
+    <!-- Section 7 -->
+    <section id="rbac">
+      <h2>7. Role-Based Access Control (RBAC)</h2>
+      <p>DevicePassport enforces 3 strictly segmented staff roles at the server API level:</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Feature / Capability</th>
+            <th>👑 Shop Owner</th>
+            <th>🔧 Technician</th>
+            <th>🎧 Support Desk</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>P&L Financials & Gross Profit Analytics</td>
+            <td>✅ Yes</td>
+            <td>❌ No</td>
+            <td>❌ No</td>
+          </tr>
+          <tr>
+            <td>Supplier Invoices & Procurement Costs</td>
+            <td>✅ Yes</td>
+            <td>❌ No</td>
+            <td>❌ No</td>
+          </tr>
+          <tr>
+            <td>Shop Settings, Branding & Staff Admin</td>
+            <td>✅ Yes</td>
+            <td>❌ No</td>
+            <td>❌ No</td>
+          </tr>
+          <tr>
+            <td>Hardware Diagnostic Tests & Passports</td>
+            <td>✅ Yes</td>
+            <td>✅ Yes</td>
+            <td>❌ No</td>
+          </tr>
+          <tr>
+            <td>Stock Intake Queue & Refurbishment Tasks</td>
+            <td>✅ Yes</td>
+            <td>✅ Yes</td>
+            <td>❌ No</td>
+          </tr>
+          <tr>
+            <td>Activate Sales & Customer Warranties</td>
+            <td>✅ Yes</td>
+            <td>✅ Yes</td>
+            <td>❌ No</td>
+          </tr>
+          <tr>
+            <td>Warranty Claims Triage & Service Notes</td>
+            <td>✅ Yes</td>
+            <td>✅ Yes</td>
+            <td>✅ Yes</td>
+          </tr>
+          <tr>
+            <td>Customer Handover Search & Status Updates</td>
+            <td>✅ Yes</td>
+            <td>✅ Yes</td>
+            <td>✅ Yes</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Section 8 -->
+    <section id="warranty">
+      <h2>8. Digital Warranty & Public QR Passports</h2>
+      <p>Every inspected device receives a <strong>Public QR Device Passport</strong> and a <strong>Private Customer Warranty Card</strong>:</p>
+      <ul>
+        <li><strong>Public Passport:</strong> Scan the 40 × 25 mm sticker on the laptop lid to see hardware specs, battery health, SSD wear, and test evidence. Buyers love this transparency!</li>
+        <li><strong>Customer Warranty Card:</strong> Upon sale activation, a private QR warranty card is issued. The customer can file warranty claims without creating an account and track live technician updates privately.</li>
+        <li><strong>Internal Job Sheet:</strong> Technicians can print an authenticated A4 repair sheet for the physical repair bench with customer signatures.</li>
+      </ul>
+    </section>
+
+    <!-- Section 9 -->
+    <section id="backups">
+      <h2>9. Automated Backups & Safety Restores</h2>
+      <p>DevicePassport ensures your data is never lost:</p>
+      <ul>
+        <li><strong>Daily Automatic Snapshots:</strong> Automatically generates SQLite backups retained for 14 days.</li>
+        <li><strong>Guarded Restore:</strong> Restoring a backup requires the Owner password and exact text confirmation <code>RESTORE</code>. A pre-restore safety snapshot is automatically created before any database swap.</li>
+      </ul>
+    </section>
+
+    <!-- Section 10 -->
+    <section id="cloud-deploy">
+      <h2>10. Cloud Deployment Guide</h2>
+      <p>DevicePassport runs seamlessly on any modern cloud hosting platform:</p>
+      <ul>
+        <li><strong>Netlify / Vercel:</strong> Zero-config Next.js SSR deployment. (See our live Netlify demo).</li>
+        <li><strong>Render:</strong> Use the included <code>render.yaml</code> blueprint for a 1-click Docker web service.</li>
+        <li><strong>Ubuntu / Debian VPS (DigitalOcean / Hetzner / AWS):</strong> Clone the repository, configure <code>.env.production</code>, and run <code>docker compose up -d</code> behind NGINX or Caddy reverse proxy.</li>
+      </ul>
+    </section>
+
+    <!-- Section 11 -->
+    <section id="faq">
+      <h2>11. FAQ & Troubleshooting</h2>
+      <h3>Q: Can customers edit their warranty or fake test reports?</h3>
+      <p>No. Every Windows report is cryptographically signed using per-station HMAC-SHA256 tokens. The server validates that submitted data matches Tester V4's signed payload and rejects modified or replayed reports.</p>
+
+      <h3>Q: Can I use this with barcode scanners and label printers?</h3>
+      <p>Yes! The 40 × 25 mm asset stickers and 60 × 30 mm intake labels are formatted for standard thermal label printers (Brother, Zebra, Xprinter).</p>
+
+      <h3>Q: Where is support available?</h3>
+      <p>For technical inquiries, bug reports, and customization requests, reach out via GitHub or through the official marketplace support channel.</p>
+    </section>
+
+  </main>
+
+</body>
+</html>
