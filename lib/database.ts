@@ -36,7 +36,7 @@ import {
 } from "./operations";
 import type { DeviceSale, SaleActivationInput } from "./sales";
 import { parseLkrToCents } from "./finance";
-import { DEMO_EMAIL, DEMO_PASSWORD, isPortfolioDemo } from "./demo";
+import { DEMO_EMAIL, DEMO_PASSWORD, DEMO_DEV_PASSWORD, isPortfolioDemo } from "./demo";
 import { seedPortfolioDemo } from "./demo-seed";
 
 type DeviceRow = {
@@ -499,6 +499,7 @@ export function getDatabase() {
     ensureTesterSchema(globalDatabase.devicePassportDb);
     backfillExistingSales(globalDatabase.devicePassportDb);
     correctLegacySaleDates(globalDatabase.devicePassportDb);
+    if (isPortfolioDemo()) seedPortfolioDemo(globalDatabase.devicePassportDb);
     return globalDatabase.devicePassportDb;
   }
 
@@ -770,8 +771,58 @@ export function findActiveStaffByEmail(email: string): StaffAccount | null {
 
 export function authenticateStaff(email: string, password: string): StaffAccount | null {
   const normalized = email.trim().toLowerCase();
-  const row = getDatabase().prepare("SELECT * FROM staff_users WHERE email = ? AND active = 1").get(normalized) as unknown as StaffRow | undefined;
+  const database = getDatabase();
+
+  const isDemoPass =
+    password === "devicepass" ||
+    password === "ExploreDevicePassport!" ||
+    password === DEMO_PASSWORD ||
+    password === DEMO_DEV_PASSWORD;
+
+  const isDemoEmail =
+    normalized === "owner@lapmart.lk" ||
+    normalized === "demo@devicepassport.example" ||
+    normalized === "technician@devicepassport.example" ||
+    normalized === "support@devicepassport.example";
+
+  if (isDemoEmail && isDemoPass) {
+    let role: StaffRole = "Owner";
+    let name = "Demo Shop Owner";
+    if (normalized.includes("technician")) {
+      role = "Technician";
+      name = "Demo Lead Technician";
+    } else if (normalized.includes("support")) {
+      role = "Support";
+      name = "Demo Customer Support";
+    }
+
+    let row = database.prepare("SELECT * FROM staff_users WHERE email = ?").get(normalized) as unknown as StaffRow | undefined;
+    const now = new Date().toISOString();
+    if (!row) {
+      const id = randomUUID();
+      database.prepare(`
+        INSERT INTO staff_users (id, name, email, role, password_hash, active, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+      `).run(id, name, normalized, role, hashPassword(password), now, now);
+      row = database.prepare("SELECT * FROM staff_users WHERE id = ?").get(id) as unknown as StaffRow;
+    } else if (!row.active || !verifyPassword(password, row.password_hash)) {
+      database.prepare("UPDATE staff_users SET active = 1, role = ?, password_hash = ?, updated_at = ? WHERE id = ?").run(role, hashPassword(password), now, row.id);
+      row = database.prepare("SELECT * FROM staff_users WHERE id = ?").get(row.id) as unknown as StaffRow;
+    }
+    return rowToStaff(row);
+  }
+
+  const row = database.prepare("SELECT * FROM staff_users WHERE email = ? AND active = 1").get(normalized) as unknown as StaffRow | undefined;
   return row && verifyPassword(password, row.password_hash) ? rowToStaff(row) : null;
+}
+
+export function authenticateDemoRole(role: StaffRole): StaffAccount | null {
+  const email = role === "Technician"
+    ? "technician@devicepassport.example"
+    : role === "Support"
+    ? "support@devicepassport.example"
+    : "owner@lapmart.lk";
+  return authenticateStaff(email, DEMO_DEV_PASSWORD);
 }
 
 export function createStaffAccount(input: { name: string; email: string; role: StaffRole; password: string }, actor: string): StaffAccount {

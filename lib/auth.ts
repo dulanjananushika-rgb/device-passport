@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { authenticateStaff, findActiveStaffByEmail, findStaffById } from "./database";
 import type { StaffAccount, StaffRole } from "./operations";
+import { isPortfolioDemo } from "./demo";
 
 export const SESSION_COOKIE = "devicepassport_session";
 
@@ -20,7 +21,11 @@ export type StaffSession = {
 };
 
 function sessionSecret() {
-  return process.env.DEVICEPASSPORT_SESSION_SECRET ?? (process.env.NODE_ENV === "production" ? "" : "devicepassport-local-development-secret");
+  return (
+    process.env.DEVICEPASSPORT_SESSION_SECRET ||
+    (isPortfolioDemo() ? "devicepassport-public-portfolio-demo-session-secret-2026" : "") ||
+    (process.env.NODE_ENV === "production" ? "" : "devicepassport-local-development-secret")
+  );
 }
 
 function safeEqual(left: string, right: string) {

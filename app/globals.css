@@ -4432,3 +4432,133 @@ a {
 @media print {
   .portfolio-demo-banner { display: none; }
 }
+
+
+/* Recruiter & Guest Demo Login Styles */
+.demo-recruiter-box {
+  margin: 0 0 18px;
+  padding: 16px;
+  border: 1px solid #c8e2d4;
+  border-radius: 14px;
+  background: #f2f9f5;
+  box-shadow: 0 2px 8px rgba(28, 92, 71, 0.04);
+}
+
+.demo-recruiter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.demo-recruiter-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: #1c5c47;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 6px;
+  letter-spacing: -0.01em;
+}
+
+.demo-recruiter-hint {
+  font-size: 11px;
+  font-weight: 600;
+  color: #3b6b55;
+}
+
+.demo-recruiter-desc {
+  margin: 9px 0 12px;
+  color: #3e564a;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.demo-roles-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.demo-role-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid #d4e7dd;
+  border-radius: 10px;
+  background: #ffffff;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.demo-role-btn:hover:not(:disabled) {
+  border-color: #1c5c47;
+  background: #fcfffd;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(28, 92, 71, 0.09);
+}
+
+.demo-role-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.demo-role-btn.is-loading {
+  border-color: #b8860b;
+  background: #fffdf5;
+}
+
+.demo-role-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.demo-role-name {
+  color: #142e23;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.demo-role-action {
+  color: #1c5c47;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.demo-role-spinner {
+  color: #b8860b;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.demo-role-tagline {
+  color: #637a6e;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.demo-or-divider {
+  display: flex;
+  align-items: center;
+  margin: 18px 0;
+  text-align: center;
+  color: #83978d;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.demo-or-divider::before,
+.demo-or-divider::after {
+  content: "";
+  flex: 1;
+  border-bottom: 1px solid #e1ebe5;
+}
+
+.demo-or-divider span {
+  padding: 0 10px;
+}
