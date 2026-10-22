@@ -1,18 +1,29 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { hashPassword } from "./passwords";
 import { DEMO_DEV_PASSWORD } from "./demo";
 
+function upsertStaffUser(database: DatabaseSync, name: string, email: string, role: string, passwordHash: string, now: string): string {
+  const normalized = email.trim().toLowerCase();
+  const existing = database.prepare("SELECT id FROM staff_users WHERE email = ?").get(normalized) as { id: string } | undefined;
+  if (existing) {
+    database.prepare("UPDATE staff_users SET name = ?, role = ?, password_hash = ?, active = 1, updated_at = ? WHERE id = ?")
+      .run(name, role, passwordHash, now, existing.id);
+    return existing.id;
+  }
+  const id = randomUUID();
+  database.prepare("INSERT INTO staff_users (id, name, email, role, password_hash, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)")
+    .run(id, name, normalized, role, passwordHash, now, now);
+  return id;
+}
+
 // Runs once on each fresh disposable database. All people and records below
 // are fictional; normal shop deployments never call this initializer.
 export function seedPortfolioDemo(database: DatabaseSync) {
-  if (database.prepare("SELECT value FROM app_meta WHERE key = 'portfolio_demo_v2'").get()) return;
+  if (database.prepare("SELECT value FROM app_meta WHERE key = 'portfolio_demo_v3'").get()) return;
   const now = new Date().toISOString();
   const date = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
   const deviceIds = ["DVP-LK-240831", "DVP-LK-240830", "DVP-LK-240829", "DVP-LK-240828"];
-  const ownerId = "demo-owner";
-  const technicianId = "demo-technician";
-  const supportId = "demo-support";
   const defaultHash = hashPassword(DEMO_DEV_PASSWORD);
 
   database.exec("BEGIN");
@@ -24,30 +35,11 @@ export function seedPortfolioDemo(database: DatabaseSync) {
         address = 'Sample shop — Colombo, Sri Lanka', updated_at = ? WHERE id = 1
     `).run(now);
 
-    // Seed/refresh the 3 demo roles with the standard demo password
-    database.prepare(`
-      INSERT INTO staff_users (id, name, email, role, password_hash, active, created_at, updated_at)
-      VALUES (?, 'Demo Shop Owner', 'owner@lapmart.lk', 'Owner', ?, 1, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET email = 'owner@lapmart.lk', role = 'Owner', password_hash = excluded.password_hash, active = 1, updated_at = excluded.updated_at
-    `).run(ownerId, defaultHash, now, now);
-
-    database.prepare(`
-      INSERT INTO staff_users (id, name, email, role, password_hash, active, created_at, updated_at)
-      VALUES (?, 'Demo Shop Owner', 'demo@devicepassport.example', 'Owner', ?, 1, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET role = 'Owner', password_hash = excluded.password_hash, active = 1, updated_at = excluded.updated_at
-    `).run("demo-owner-alias", defaultHash, now, now);
-
-    database.prepare(`
-      INSERT INTO staff_users (id, name, email, role, password_hash, active, created_at, updated_at)
-      VALUES (?, 'Demo Technician', 'technician@devicepassport.example', 'Technician', ?, 1, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET role = 'Technician', password_hash = excluded.password_hash, active = 1, updated_at = excluded.updated_at
-    `).run(technicianId, defaultHash, now, now);
-
-    database.prepare(`
-      INSERT INTO staff_users (id, name, email, role, password_hash, active, created_at, updated_at)
-      VALUES (?, 'Demo Customer Support', 'support@devicepassport.example', 'Support', ?, 1, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET role = 'Support', password_hash = excluded.password_hash, active = 1, updated_at = excluded.updated_at
-    `).run(supportId, defaultHash, now, now);
+    // Safely upsert the 3 demo roles with the standard demo password
+    upsertStaffUser(database, "Demo Shop Owner", "owner@lapmart.lk", "Owner", defaultHash, now);
+    upsertStaffUser(database, "Demo Shop Owner", "demo@devicepassport.example", "Owner", defaultHash, now);
+    const technicianId = upsertStaffUser(database, "Demo Technician", "technician@devicepassport.example", "Technician", defaultHash, now);
+    upsertStaffUser(database, "Demo Customer Support", "support@devicepassport.example", "Support", defaultHash, now);
 
     database.prepare(`
       INSERT OR IGNORE INTO suppliers (id, name, contact_name, email, phone, active, created_by, created_at, updated_at)
@@ -117,10 +109,10 @@ export function seedPortfolioDemo(database: DatabaseSync) {
         .run(`${claimId}-note`, claimId, now);
     }
     database.prepare("INSERT OR REPLACE INTO audit_events (id, actor, action, summary, created_at) VALUES ('demo-seed', 'Demo seed', 'demo.created', 'Loaded fictional devices, sales, claims, and stock for the portfolio demo.', ?)").run(now);
-    database.prepare("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('portfolio_demo_v2', ?)").run(now);
+    database.prepare("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('portfolio_demo_v3', ?)").run(now);
     database.exec("COMMIT");
   } catch (error) {
     database.exec("ROLLBACK");
-    throw error;
+    console.error("seedPortfolioDemo non-fatal error:", error);
   }
 }

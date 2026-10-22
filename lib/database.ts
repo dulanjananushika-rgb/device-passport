@@ -499,7 +499,7 @@ export function getDatabase() {
     ensureTesterSchema(globalDatabase.devicePassportDb);
     backfillExistingSales(globalDatabase.devicePassportDb);
     correctLegacySaleDates(globalDatabase.devicePassportDb);
-    if (isPortfolioDemo()) seedPortfolioDemo(globalDatabase.devicePassportDb);
+    if (isPortfolioDemo()) { try { seedPortfolioDemo(globalDatabase.devicePassportDb); } catch (e) { console.error(e); } }
     return globalDatabase.devicePassportDb;
   }
 
@@ -580,7 +580,7 @@ export function getDatabase() {
   backfillExistingSales(database);
   correctLegacySaleDates(database);
 
-  if (isPortfolioDemo()) seedPortfolioDemo(database);
+  if (isPortfolioDemo()) { try { seedPortfolioDemo(database); } catch (e) { console.error(e); } }
 
   globalDatabase.devicePassportDb = database;
   return database;
