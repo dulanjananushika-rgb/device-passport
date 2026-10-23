@@ -1,3 +1,23 @@
+<div align="center">
+
+# ?? DevicePassport
+### Hardware Lifecycle, Verified Diagnostics & QR Warranty Platform
+
+[![Live Demo](https://img.shields.io/badge/Live_Demo-Visit_Platform-ff5a1f?style=for-the-badge&logo=netlify&logoColor=white)](https://device-passport-dulanjana.netlify.app)
+[![Buy on Gumroad](https://img.shields.io/badge/Commercial_Release-Gumroad_%2449-36B37E?style=for-the-badge&logo=gumroad&logoColor=white)](https://dulanjana57.gumroad.com/l/bctqnj)
+[![Next.js 16](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
+[![React 19](https://img.shields.io/badge/React_19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
+[![Docker](https://img.shields.io/badge/Docker_Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+
+<p align="center">
+  A production-grade shop system for refurbished device health reports, technician approvals, tamper-proof QR passports, and customer warranty claim journeys.
+</p>
+
+</div>
+
+---
+
+
 # DevicePassport — Standalone Next.js MVP
 
 DevicePassport is an independent shop system for refurbished laptop health reports, public QR passports, and digital warranties. It does not depend on OpenAI authentication or OpenAI hosting.
