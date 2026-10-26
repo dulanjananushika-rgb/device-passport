@@ -3,7 +3,8 @@
 # ?? DevicePassport
 ### Hardware Lifecycle, Verified Diagnostics & QR Warranty Platform
 
-[![Live Demo](https://img.shields.io/badge/Live_Demo-Visit_Platform-ff5a1f?style=for-the-badge&logo=netlify&logoColor=white)](https://device-passport-dulanjana.netlify.app)
+[![Live Demo (Vercel)](https://img.shields.io/badge/Live_Demo-Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://device-passport-one.vercel.app)
+[![Live Demo (Netlify)](https://img.shields.io/badge/Mirror_Demo-Netlify-00ad9f?style=for-the-badge&logo=netlify&logoColor=white)](https://device-passport-dulanjana.netlify.app)
 [![Buy on Gumroad](https://img.shields.io/badge/Commercial_Release-Gumroad_%2449-36B37E?style=for-the-badge&logo=gumroad&logoColor=white)](https://dulanjana57.gumroad.com/l/bctqnj)
 [![Next.js 16](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
 [![React 19](https://img.shields.io/badge/React_19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
