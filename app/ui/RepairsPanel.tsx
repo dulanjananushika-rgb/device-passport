@@ -28,6 +28,7 @@ export function RepairsPanel({ canManage, onAuditChange, openCreateTrigger }: Pr
       setCreateOpen(true);
     }
   }, [openCreateTrigger]);
+
   const [createForm, setCreateForm] = useState<CreateRepairInput>({
     customerName: "",
     customerPhone: "",
@@ -101,16 +102,16 @@ export function RepairsPanel({ canManage, onAuditChange, openCreateTrigger }: Pr
         accessoriesReceived: "Original 65W AC Adapter, Laptop Sleeve",
         reportedFault: "",
         physicalCondition: "Normal wear & tear",
-        estimatedCostLkr: "",
-        advancePaidLkr: "",
+        estimatedCostLkr: "12500",
+        advancePaidLkr: "2000",
         assignedTechnician: "",
       });
       await loadRepairs();
       if (onAuditChange) await onAuditChange();
-      setSuccess(`Job Sheet #${data.repair.jobNumber} created successfully.`);
+      setSuccess(`Repair job #${data.repair.jobNumber} registered. Job sheet ready.`);
 
-      // Open 80mm job sheet receipt automatically
-      window.open(`/api/repairs/${data.repair.id}/jobsheet`, "_blank", "width=420,height=600");
+      // Automatically open 80mm printable job sheet
+      window.open(`/api/repairs/${data.repair.id}/jobsheet`, "_blank");
     } catch (err: any) {
       setError(err.message || "Failed to create repair job");
     } finally {
@@ -176,13 +177,13 @@ export function RepairsPanel({ canManage, onAuditChange, openCreateTrigger }: Pr
   const diagnosingCount = repairs.filter((r) => r.status === "Diagnosing" || r.status === "Repairing").length;
 
   return (
-    <section className="page-section" style={{ padding: "0 0 32px 0" }}>
+    <section className="page-section repair-page" style={{ padding: "0 0 32px 0" }}>
       {/* Section Head */}
       <div className="section-head" style={{ marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
         <div>
-          <div className="eyebrow" style={{ color: "#38bdf8", fontWeight: "700" }}>Workshop & Customer Service Desk</div>
-          <h2 style={{ fontSize: "24px", fontWeight: "800", color: "#f8fafc", margin: "4px 0" }}>Customer Laptop Repairs & Job Sheets</h2>
-          <p style={{ color: "#94a3b8", fontSize: "14px", margin: 0 }}>
+          <div className="eyebrow" style={{ color: "var(--forest-2)", fontWeight: "700" }}>Workshop & Customer Service Desk</div>
+          <h2 style={{ fontSize: "24px", fontWeight: "800", color: "var(--ink)", margin: "4px 0" }}>Customer Laptop Repairs & Job Sheets</h2>
+          <p style={{ color: "var(--muted)", fontSize: "14px", margin: 0 }}>
             Intake outside laptops for chip-level repair, issue 80mm job sheets, track parts & labor, and print tax invoices upon collection.
           </p>
         </div>
@@ -200,69 +201,75 @@ export function RepairsPanel({ canManage, onAuditChange, openCreateTrigger }: Pr
 
       {/* Workshop Stats Banner */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "14px", marginBottom: "24px" }}>
-        <div style={{ background: "#0f172a", border: "1px solid #1e293b", padding: "16px", borderRadius: "10px" }}>
-          <span style={{ fontSize: "11px", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Workshop Jobs</span>
-          <div style={{ fontSize: "24px", fontWeight: "800", color: "#f8fafc", marginTop: "4px" }}>{repairs.length}</div>
+        <div className="stat-card" style={{ padding: "16px", borderRadius: "12px" }}>
+          <span style={{ fontSize: "11px", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Total Workshop Jobs</span>
+          <div style={{ fontSize: "24px", fontWeight: "800", color: "var(--ink)", marginTop: "4px" }}>{repairs.length}</div>
         </div>
-        <div style={{ background: "#0f172a", border: "1px solid #0284c744", padding: "16px", borderRadius: "10px" }}>
-          <span style={{ fontSize: "11px", color: "#38bdf8", textTransform: "uppercase", letterSpacing: "0.05em" }}>In Progress / Diagnosing</span>
-          <div style={{ fontSize: "24px", fontWeight: "800", color: "#38bdf8", marginTop: "4px" }}>{diagnosingCount}</div>
+        <div className="stat-card" style={{ padding: "16px", borderRadius: "12px", borderLeft: "3px solid #0284c7" }}>
+          <span style={{ fontSize: "11px", color: "#0284c7", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>In Progress / Diagnosing</span>
+          <div style={{ fontSize: "24px", fontWeight: "800", color: "#0284c7", marginTop: "4px" }}>{diagnosingCount}</div>
         </div>
-        <div style={{ background: "#0f172a", border: "1px solid #10b98144", padding: "16px", borderRadius: "10px" }}>
-          <span style={{ fontSize: "11px", color: "#10b981", textTransform: "uppercase", letterSpacing: "0.05em" }}>Ready for Customer Pickup</span>
-          <div style={{ fontSize: "24px", fontWeight: "800", color: "#34d399", marginTop: "4px" }}>{readyCount}</div>
+        <div className="stat-card" style={{ padding: "16px", borderRadius: "12px", borderLeft: "3px solid #10b981" }}>
+          <span style={{ fontSize: "11px", color: "#10b981", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Ready for Customer Pickup</span>
+          <div style={{ fontSize: "24px", fontWeight: "800", color: "#10b981", marginTop: "4px" }}>{readyCount}</div>
         </div>
-        <div style={{ background: "#0f172a", border: "1px solid #f59e0b44", padding: "16px", borderRadius: "10px" }}>
-          <span style={{ fontSize: "11px", color: "#f59e0b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Active Queue</span>
-          <div style={{ fontSize: "24px", fontWeight: "800", color: "#fbbf24", marginTop: "4px" }}>{activeCount} <small style={{ fontSize: "12px", color: "#94a3b8" }}>units</small></div>
+        <div className="stat-card" style={{ padding: "16px", borderRadius: "12px", borderLeft: "3px solid #f59e0b" }}>
+          <span style={{ fontSize: "11px", color: "#f59e0b", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Active Queue</span>
+          <div style={{ fontSize: "24px", fontWeight: "800", color: "#f59e0b", marginTop: "4px" }}>{activeCount} <small style={{ fontSize: "12px", color: "var(--muted)" }}>units</small></div>
         </div>
       </div>
 
-      {success && <div style={{ background: "#065f4633", border: "1px solid #10b981", color: "#34d399", padding: "12px 16px", borderRadius: "8px", marginBottom: "16px", fontSize: "13px" }}>{success}</div>}
-      {error && <div style={{ background: "#7f1d1d33", border: "1px solid #ef4444", color: "#f87171", padding: "12px 16px", borderRadius: "8px", marginBottom: "16px", fontSize: "13px" }}>{error}</div>}
+      {success && <div className="success-box" style={{ marginBottom: "16px" }}>{success}</div>}
+      {error && <div className="error-box" style={{ marginBottom: "16px" }}>{error}</div>}
 
       {/* Modal: Create Repair Job */}
       {createOpen && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "20px" }}>
-          <div style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: "14px", padding: "24px", maxWidth: "640px", width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-              <h3 style={{ fontSize: "18px", fontWeight: "700", color: "#f8fafc", margin: 0 }}>🔧 Customer Laptop Intake Job Sheet</h3>
-              <button type="button" onClick={() => setCreateOpen(false)} style={{ background: "transparent", border: "none", color: "#94a3b8", fontSize: "18px", cursor: "pointer" }}>✕</button>
+        <div className="modal-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && setCreateOpen(false)}>
+          <section className="modal" role="dialog" aria-modal="true" style={{ maxWidth: "640px", width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
+            <div className="modal-head">
+              <div>
+                <div className="eyebrow" style={{ color: "var(--forest-2)" }}>Intake Workflow</div>
+                <h2>🔧 Customer Laptop Intake Job Sheet</h2>
+              </div>
+              <button className="close-button" type="button" onClick={() => setCreateOpen(false)} aria-label="Close dialog">✕</button>
             </div>
-            <p style={{ fontSize: "13px", color: "#94a3b8", marginBottom: "16px" }}>
+            <p style={{ fontSize: "13px", color: "var(--muted)", margin: "0 0 16px" }}>
               Record customer device details, accessories received, fault symptoms and deposit. An 80mm job sheet receipt will be generated.
             </p>
             <form onSubmit={handleCreateJob} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "#cbd5e1" }}>
+                <label className="form-label" style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--ink)", fontWeight: 600 }}>
                   Customer Name *
                   <input
                     required
                     placeholder="e.g. Kasun Chamara"
                     value={createForm.customerName}
                     onChange={(e) => setCreateForm({ ...createForm, customerName: e.target.value })}
-                    style={{ background: "#1e293b", border: "1px solid #334155", color: "#ffffff", padding: "8px 12px", borderRadius: "6px" }}
+                    className="form-input"
+                    style={{ background: "var(--paper)", border: "1px solid var(--line)", color: "var(--ink)", padding: "8px 12px", borderRadius: "8px", outline: "none" }}
                   />
                 </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "#cbd5e1" }}>
+                <label className="form-label" style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--ink)", fontWeight: 600 }}>
                   Phone Number *
                   <input
                     required
                     placeholder="e.g. 0771234567"
                     value={createForm.customerPhone}
                     onChange={(e) => setCreateForm({ ...createForm, customerPhone: e.target.value })}
-                    style={{ background: "#1e293b", border: "1px solid #334155", color: "#ffffff", padding: "8px 12px", borderRadius: "6px" }}
+                    className="form-input"
+                    style={{ background: "var(--paper)", border: "1px solid var(--line)", color: "var(--ink)", padding: "8px 12px", borderRadius: "8px", outline: "none" }}
                   />
                 </label>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
-                <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "#cbd5e1" }}>
+                <label className="form-label" style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--ink)", fontWeight: 600 }}>
                   Brand *
                   <select
                     value={createForm.deviceBrand}
                     onChange={(e) => setCreateForm({ ...createForm, deviceBrand: e.target.value })}
-                    style={{ background: "#1e293b", border: "1px solid #334155", color: "#ffffff", padding: "8px 12px", borderRadius: "6px" }}
+                    className="form-select"
+                    style={{ background: "var(--paper)", border: "1px solid var(--line)", color: "var(--ink)", padding: "8px 12px", borderRadius: "8px", outline: "none" }}
                   >
                     <option value="Dell">Dell</option>
                     <option value="Lenovo">Lenovo</option>
@@ -274,49 +281,53 @@ export function RepairsPanel({ canManage, onAuditChange, openCreateTrigger }: Pr
                     <option value="Other">Other</option>
                   </select>
                 </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "#cbd5e1" }}>
+                <label className="form-label" style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--ink)", fontWeight: 600 }}>
                   Model *
                   <input
                     required
                     placeholder="e.g. Latitude 5400"
                     value={createForm.deviceModel}
                     onChange={(e) => setCreateForm({ ...createForm, deviceModel: e.target.value })}
-                    style={{ background: "#1e293b", border: "1px solid #334155", color: "#ffffff", padding: "8px 12px", borderRadius: "6px" }}
+                    className="form-input"
+                    style={{ background: "var(--paper)", border: "1px solid var(--line)", color: "var(--ink)", padding: "8px 12px", borderRadius: "8px", outline: "none" }}
                   />
                 </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "#cbd5e1" }}>
+                <label className="form-label" style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--ink)", fontWeight: 600 }}>
                   Serial / Service Tag
                   <input
                     placeholder="e.g. 8K9L1M2"
                     value={createForm.serial}
                     onChange={(e) => setCreateForm({ ...createForm, serial: e.target.value })}
-                    style={{ background: "#1e293b", border: "1px solid #334155", color: "#ffffff", padding: "8px 12px", borderRadius: "6px" }}
+                    className="form-input"
+                    style={{ background: "var(--paper)", border: "1px solid var(--line)", color: "var(--ink)", padding: "8px 12px", borderRadius: "8px", outline: "none" }}
                   />
                 </label>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "#cbd5e1" }}>
+                <label className="form-label" style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--ink)", fontWeight: 600 }}>
                   Windows Password / PIN
                   <input
                     placeholder="e.g. 1234 or None"
                     value={createForm.devicePasswordPin}
                     onChange={(e) => setCreateForm({ ...createForm, devicePasswordPin: e.target.value })}
-                    style={{ background: "#1e293b", border: "1px solid #334155", color: "#ffffff", padding: "8px 12px", borderRadius: "6px" }}
+                    className="form-input"
+                    style={{ background: "var(--paper)", border: "1px solid var(--line)", color: "var(--ink)", padding: "8px 12px", borderRadius: "8px", outline: "none" }}
                   />
                 </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "#cbd5e1" }}>
+                <label className="form-label" style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--ink)", fontWeight: 600 }}>
                   Accessories Left with Laptop
                   <input
                     placeholder="e.g. Original 65W AC Adapter, Laptop Sleeve"
                     value={createForm.accessoriesReceived}
                     onChange={(e) => setCreateForm({ ...createForm, accessoriesReceived: e.target.value })}
-                    style={{ background: "#1e293b", border: "1px solid #334155", color: "#ffffff", padding: "8px 12px", borderRadius: "6px" }}
+                    className="form-input"
+                    style={{ background: "var(--paper)", border: "1px solid var(--line)", color: "var(--ink)", padding: "8px 12px", borderRadius: "8px", outline: "none" }}
                   />
                 </label>
               </div>
 
-              <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "#cbd5e1" }}>
+              <label className="form-label" style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--ink)", fontWeight: 600 }}>
                 Reported Fault Description *
                 <textarea
                   required
@@ -324,81 +335,88 @@ export function RepairsPanel({ canManage, onAuditChange, openCreateTrigger }: Pr
                   placeholder="e.g. No power when charging, charging light blinks amber, fan spins then immediately stops"
                   value={createForm.reportedFault}
                   onChange={(e) => setCreateForm({ ...createForm, reportedFault: e.target.value })}
-                  style={{ background: "#1e293b", border: "1px solid #334155", color: "#ffffff", padding: "8px 12px", borderRadius: "6px", resize: "none" }}
+                  className="form-input"
+                  style={{ background: "var(--paper)", border: "1px solid var(--line)", color: "var(--ink)", padding: "8px 12px", borderRadius: "8px", resize: "none", outline: "none" }}
                 />
               </label>
 
-              <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "#cbd5e1" }}>
+              <label className="form-label" style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--ink)", fontWeight: 600 }}>
                 Physical Condition (Scratches, Dents, Loose Hinges)
                 <input
                   placeholder="e.g. Scratches on top cover, bottom rubber foot missing, right hinge slightly stiff"
                   value={createForm.physicalCondition}
                   onChange={(e) => setCreateForm({ ...createForm, physicalCondition: e.target.value })}
-                  style={{ background: "#1e293b", border: "1px solid #334155", color: "#ffffff", padding: "8px 12px", borderRadius: "6px" }}
+                  className="form-input"
+                  style={{ background: "var(--paper)", border: "1px solid var(--line)", color: "var(--ink)", padding: "8px 12px", borderRadius: "8px", outline: "none" }}
                 />
               </label>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
-                <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "#cbd5e1" }}>
+                <label className="form-label" style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--ink)", fontWeight: 600 }}>
                   Estimated Cost (LKR)
                   <input
                     type="number"
                     placeholder="e.g. 12500"
                     value={createForm.estimatedCostLkr}
                     onChange={(e) => setCreateForm({ ...createForm, estimatedCostLkr: e.target.value })}
-                    style={{ background: "#1e293b", border: "1px solid #334155", color: "#ffffff", padding: "8px 12px", borderRadius: "6px" }}
+                    className="form-input"
+                    style={{ background: "var(--paper)", border: "1px solid var(--line)", color: "var(--ink)", padding: "8px 12px", borderRadius: "8px", outline: "none" }}
                   />
                 </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "#cbd5e1" }}>
+                <label className="form-label" style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--ink)", fontWeight: 600 }}>
                   Advance Paid (LKR)
                   <input
                     type="number"
                     placeholder="e.g. 2000"
                     value={createForm.advancePaidLkr}
                     onChange={(e) => setCreateForm({ ...createForm, advancePaidLkr: e.target.value })}
-                    style={{ background: "#1e293b", border: "1px solid #334155", color: "#ffffff", padding: "8px 12px", borderRadius: "6px" }}
+                    className="form-input"
+                    style={{ background: "var(--paper)", border: "1px solid var(--line)", color: "var(--ink)", padding: "8px 12px", borderRadius: "8px", outline: "none" }}
                   />
                 </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "#cbd5e1" }}>
+                <label className="form-label" style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--ink)", fontWeight: 600 }}>
                   Assign Technician
                   <input
                     placeholder="e.g. Nuwan"
                     value={createForm.assignedTechnician}
                     onChange={(e) => setCreateForm({ ...createForm, assignedTechnician: e.target.value })}
-                    style={{ background: "#1e293b", border: "1px solid #334155", color: "#ffffff", padding: "8px 12px", borderRadius: "6px" }}
+                    className="form-input"
+                    style={{ background: "var(--paper)", border: "1px solid var(--line)", color: "var(--ink)", padding: "8px 12px", borderRadius: "8px", outline: "none" }}
                   />
                 </label>
               </div>
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "14px" }}>
-                <button type="button" onClick={() => setCreateOpen(false)} style={{ background: "transparent", border: "1px solid #334155", color: "#94a3b8", padding: "8px 16px", borderRadius: "6px", cursor: "pointer" }}>Cancel</button>
-                <button type="submit" disabled={saving} style={{ background: "#10b981", border: "none", color: "#ffffff", padding: "8px 20px", borderRadius: "6px", fontWeight: "700", cursor: "pointer" }}>
+                <button type="button" className="button secondary" onClick={() => setCreateOpen(false)}>Cancel</button>
+                <button type="submit" disabled={saving} className="button primary">
                   {saving ? "Creating..." : "Print Job Sheet & Save Intake"}
                 </button>
               </div>
             </form>
-          </div>
+          </section>
         </div>
       )}
 
       {/* Modal: Update Repair Job */}
       {selectedRepair && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: "20px" }}>
-          <div style={{ background: "#0f172a", border: "1px solid #38bdf8", borderRadius: "14px", padding: "24px", maxWidth: "560px", width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-              <h3 style={{ fontSize: "18px", fontWeight: "700", color: "#38bdf8", margin: 0 }}>
-                Update Job #{selectedRepair.jobNumber} ({selectedRepair.deviceBrand} {selectedRepair.deviceModel})
-              </h3>
-              <button type="button" onClick={() => setSelectedRepair(null)} style={{ background: "transparent", border: "none", color: "#94a3b8", fontSize: "18px", cursor: "pointer" }}>✕</button>
+        <div className="modal-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && setSelectedRepair(null)}>
+          <section className="modal" role="dialog" aria-modal="true" style={{ maxWidth: "560px", width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
+            <div className="modal-head">
+              <div>
+                <div className="eyebrow" style={{ color: "#0284c7" }}>Workshop Service Update</div>
+                <h2>Update Job #{selectedRepair.jobNumber} ({selectedRepair.deviceBrand} {selectedRepair.deviceModel})</h2>
+              </div>
+              <button className="close-button" type="button" onClick={() => setSelectedRepair(null)} aria-label="Close dialog">✕</button>
             </div>
 
             <form onSubmit={handleUpdateJob} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "#cbd5e1" }}>
+              <label className="form-label" style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--ink)", fontWeight: 600 }}>
                 Repair Status
                 <select
                   value={updateStatus}
                   onChange={(e) => setUpdateStatus(e.target.value as RepairStatus)}
-                  style={{ background: "#1e293b", border: "1px solid #334155", color: "#ffffff", padding: "8px 12px", borderRadius: "6px" }}
+                  className="form-select"
+                  style={{ background: "var(--paper)", border: "1px solid var(--line)", color: "var(--ink)", padding: "8px 12px", borderRadius: "8px", outline: "none" }}
                 >
                   {repairStatuses.map((st) => (
                     <option key={st} value={st}>{st}</option>
@@ -407,69 +425,74 @@ export function RepairsPanel({ canManage, onAuditChange, openCreateTrigger }: Pr
               </label>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "#cbd5e1" }}>
+                <label className="form-label" style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--ink)", fontWeight: 600 }}>
                   Parts Cost (LKR)
                   <input
                     type="number"
                     placeholder="e.g. 7500"
                     value={updatePartsCost}
                     onChange={(e) => setUpdatePartsCost(e.target.value)}
-                    style={{ background: "#1e293b", border: "1px solid #334155", color: "#ffffff", padding: "8px 12px", borderRadius: "6px" }}
+                    className="form-input"
+                    style={{ background: "var(--paper)", border: "1px solid var(--line)", color: "var(--ink)", padding: "8px 12px", borderRadius: "8px", outline: "none" }}
                   />
                 </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "#cbd5e1" }}>
+                <label className="form-label" style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--ink)", fontWeight: 600 }}>
                   Technician Labor Fee (LKR)
                   <input
                     type="number"
                     placeholder="e.g. 3500"
                     value={updateLaborFee}
                     onChange={(e) => setUpdateLaborFee(e.target.value)}
-                    style={{ background: "#1e293b", border: "1px solid #334155", color: "#ffffff", padding: "8px 12px", borderRadius: "6px" }}
+                    className="form-input"
+                    style={{ background: "var(--paper)", border: "1px solid var(--line)", color: "var(--ink)", padding: "8px 12px", borderRadius: "8px", outline: "none" }}
                   />
                 </label>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "#cbd5e1" }}>
+                <label className="form-label" style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--ink)", fontWeight: 600 }}>
                   Advance Deducted (LKR)
                   <input
                     type="number"
                     placeholder="e.g. 2000"
                     value={updateAdvancePaid}
                     onChange={(e) => setUpdateAdvancePaid(e.target.value)}
-                    style={{ background: "#1e293b", border: "1px solid #334155", color: "#ffffff", padding: "8px 12px", borderRadius: "6px" }}
+                    className="form-input"
+                    style={{ background: "var(--paper)", border: "1px solid var(--line)", color: "var(--ink)", padding: "8px 12px", borderRadius: "8px", outline: "none" }}
                   />
                 </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "#cbd5e1" }}>
+                <label className="form-label" style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--ink)", fontWeight: 600 }}>
                   Assigned Technician
                   <input
                     placeholder="e.g. Nuwan"
                     value={updateTechnician}
                     onChange={(e) => setUpdateTechnician(e.target.value)}
-                    style={{ background: "#1e293b", border: "1px solid #334155", color: "#ffffff", padding: "8px 12px", borderRadius: "6px" }}
+                    className="form-input"
+                    style={{ background: "var(--paper)", border: "1px solid var(--line)", color: "var(--ink)", padding: "8px 12px", borderRadius: "8px", outline: "none" }}
                   />
                 </label>
               </div>
 
-              <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "#cbd5e1" }}>
+              <label className="form-label" style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--ink)", fontWeight: 600 }}>
                 Technician Notes / Repair Log
                 <textarea
                   rows={3}
                   placeholder="e.g. Replaced 19V shorted ceramic capacitor near charging IC. Cleaned dust and applied Arctic MX-4 thermal paste. Stress tested for 3 hours."
                   value={updateTechNotes}
                   onChange={(e) => setUpdateTechNotes(e.target.value)}
-                  style={{ background: "#1e293b", border: "1px solid #334155", color: "#ffffff", padding: "8px 12px", borderRadius: "6px", resize: "none" }}
+                  className="form-input"
+                  style={{ background: "var(--paper)", border: "1px solid var(--line)", color: "var(--ink)", padding: "8px 12px", borderRadius: "8px", resize: "none", outline: "none" }}
                 />
               </label>
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "14px" }}>
-                <button type="button" onClick={() => setSelectedRepair(null)} style={{ background: "transparent", border: "1px solid #334155", color: "#94a3b8", padding: "8px 16px", borderRadius: "6px", cursor: "pointer" }}>Cancel</button>
-                <button type="submit" disabled={saving} style={{ background: "#0284c7", border: "none", color: "#ffffff", padding: "8px 20px", borderRadius: "6px", fontWeight: "700", cursor: "pointer" }}>
+                <button type="button" className="button secondary" onClick={() => setSelectedRepair(null)}>Cancel</button>
+                <button type="submit" disabled={saving} className="button primary">
                   {saving ? "Saving..." : "Save Status & Billing"}
                 </button>
               </div>
             </form>
-          </div>
+          </section>
         </div>
       )}
 
@@ -482,14 +505,15 @@ export function RepairsPanel({ canManage, onAuditChange, openCreateTrigger }: Pr
               type="button"
               onClick={() => setStatusFilter(st)}
               style={{
-                background: statusFilter === st ? "#0284c7" : "#1e293b",
-                color: statusFilter === st ? "#ffffff" : "#94a3b8",
-                border: "none",
-                borderRadius: "6px",
+                background: statusFilter === st ? "var(--forest-2)" : "var(--card)",
+                color: statusFilter === st ? "#ffffff" : "var(--muted)",
+                border: "1px solid var(--line)",
+                borderRadius: "8px",
                 padding: "6px 12px",
                 fontSize: "12px",
                 fontWeight: "600",
                 cursor: "pointer",
+                transition: "all 0.15s ease",
               }}
             >
               {st}
@@ -501,11 +525,12 @@ export function RepairsPanel({ canManage, onAuditChange, openCreateTrigger }: Pr
           placeholder="Search job #, customer phone, brand or serial..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          className="search"
           style={{
-            background: "#0f172a",
-            border: "1px solid #334155",
-            borderRadius: "8px",
-            color: "#ffffff",
+            background: "var(--card)",
+            border: "1px solid var(--line)",
+            borderRadius: "10px",
+            color: "var(--ink)",
             padding: "8px 14px",
             fontSize: "13px",
             width: "320px",
@@ -515,10 +540,10 @@ export function RepairsPanel({ canManage, onAuditChange, openCreateTrigger }: Pr
       </div>
 
       {/* Repairs Table */}
-      <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "14px", padding: "20px", overflowX: "auto" }}>
+      <div className="panel" style={{ borderRadius: "14px", padding: "16px", overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", textAlign: "left" }}>
           <thead>
-            <tr style={{ borderBottom: "1px solid #334155", color: "#94a3b8" }}>
+            <tr style={{ borderBottom: "1px solid var(--line)", color: "var(--muted)" }}>
               <th style={{ padding: "10px 12px" }}>Job #</th>
               <th style={{ padding: "10px 12px" }}>Customer</th>
               <th style={{ padding: "10px 12px" }}>Device & Serial</th>
@@ -540,43 +565,43 @@ export function RepairsPanel({ canManage, onAuditChange, openCreateTrigger }: Pr
                   ? "#f59e0b"
                   : r.status === "Unrepairable / Returned"
                   ? "#ef4444"
-                  : "#94a3b8";
+                  : "var(--muted)";
 
               return (
-                <tr key={r.id} style={{ borderBottom: "1px solid #1e293b" }}>
-                  <td style={{ padding: "12px", fontWeight: "700", color: "#38bdf8" }}>
+                <tr key={r.id} style={{ borderBottom: "1px solid var(--line)" }}>
+                  <td style={{ padding: "12px", fontWeight: "700", color: "var(--forest-2)" }}>
                     {r.jobNumber}
-                    <div style={{ fontSize: "11px", color: "#64748b" }}>{r.receivedAt.slice(0, 10)}</div>
+                    <div style={{ fontSize: "11px", color: "var(--muted)" }}>{r.receivedAt.slice(0, 10)}</div>
                   </td>
                   <td style={{ padding: "12px" }}>
-                    <div style={{ fontWeight: "600", color: "#ffffff" }}>{r.customerName}</div>
-                    <div style={{ fontSize: "12px", color: "#94a3b8" }}>{r.customerPhone}</div>
+                    <div style={{ fontWeight: "600", color: "var(--ink)" }}>{r.customerName}</div>
+                    <div style={{ fontSize: "12px", color: "var(--muted)" }}>{r.customerPhone}</div>
                   </td>
                   <td style={{ padding: "12px" }}>
-                    <div style={{ fontWeight: "600", color: "#ffffff" }}>{r.deviceBrand} {r.deviceModel}</div>
-                    <div style={{ fontSize: "11px", color: "#64748b" }}>SN: {r.serial}</div>
+                    <div style={{ fontWeight: "600", color: "var(--ink)" }}>{r.deviceBrand} {r.deviceModel}</div>
+                    <div style={{ fontSize: "11px", color: "var(--muted)" }}>SN: {r.serial}</div>
                   </td>
                   <td style={{ padding: "12px", maxWidth: "220px" }}>
-                    <div style={{ fontSize: "12px", color: "#cbd5e1", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={r.reportedFault}>
+                    <div style={{ fontSize: "12px", color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={r.reportedFault}>
                       {r.reportedFault}
                     </div>
                     {r.technicianNotes && (
-                      <div style={{ fontSize: "11px", color: "#38bdf8", marginTop: "2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <div style={{ fontSize: "11px", color: "#0284c7", marginTop: "2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         Note: {r.technicianNotes}
                       </div>
                     )}
                   </td>
                   <td style={{ padding: "12px" }}>
-                    <span style={{ background: `${statusColor}22`, color: statusColor, border: `1px solid ${statusColor}44`, padding: "3px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: "700" }}>
+                    <span style={{ background: `${statusColor}18`, color: statusColor, border: `1px solid ${statusColor}44`, padding: "3px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: "700" }}>
                       {r.status}
                     </span>
                   </td>
-                  <td style={{ padding: "12px", color: "#cbd5e1" }}>
-                    {r.assignedTechnician || <span style={{ color: "#64748b" }}>Unassigned</span>}
+                  <td style={{ padding: "12px", color: "var(--ink)" }}>
+                    {r.assignedTechnician || <span style={{ color: "var(--muted)" }}>Unassigned</span>}
                   </td>
                   <td style={{ padding: "12px", textAlign: "right" }}>
-                    <strong style={{ color: "#ffffff" }}>{r.formattedTotalAmount}</strong>
-                    <div style={{ fontSize: "11px", color: r.balanceDueCents > 0 ? "#f87171" : "#10b981" }}>
+                    <strong style={{ color: "var(--ink)" }}>{r.formattedTotalAmount}</strong>
+                    <div style={{ fontSize: "11px", color: r.balanceDueCents > 0 ? "#ef4444" : "#10b981", fontWeight: 600 }}>
                       Due: {r.formattedBalanceDue}
                     </div>
                   </td>
@@ -587,7 +612,8 @@ export function RepairsPanel({ canManage, onAuditChange, openCreateTrigger }: Pr
                         target="_blank"
                         rel="noreferrer"
                         title="Print 80mm Job Sheet"
-                        style={{ background: "#1e293b", color: "#38bdf8", padding: "4px 8px", borderRadius: "6px", fontSize: "11px", textDecoration: "none", border: "1px solid #334155" }}
+                        className="button secondary small"
+                        style={{ padding: "4px 8px", fontSize: "11px", textDecoration: "none" }}
                       >
                         📄 Job Sheet
                       </a>
@@ -596,7 +622,8 @@ export function RepairsPanel({ canManage, onAuditChange, openCreateTrigger }: Pr
                         target="_blank"
                         rel="noreferrer"
                         title="Print Repair Tax Invoice"
-                        style={{ background: "#065f4633", color: "#34d399", padding: "4px 8px", borderRadius: "6px", fontSize: "11px", textDecoration: "none", border: "1px solid #10b98144" }}
+                        className="button secondary small"
+                        style={{ padding: "4px 8px", fontSize: "11px", textDecoration: "none", color: "#10b981" }}
                       >
                         🧾 Invoice
                       </a>
@@ -611,7 +638,8 @@ export function RepairsPanel({ canManage, onAuditChange, openCreateTrigger }: Pr
                           setUpdateTechNotes(r.technicianNotes || "");
                           setUpdateTechnician(r.assignedTechnician || "");
                         }}
-                        style={{ background: "#1e293b", color: "#f8fafc", padding: "4px 8px", borderRadius: "6px", fontSize: "11px", border: "1px solid #334155", cursor: "pointer" }}
+                        className="button secondary small"
+                        style={{ padding: "4px 8px", fontSize: "11px" }}
                       >
                         ✏️ Update
                       </button>
@@ -622,7 +650,7 @@ export function RepairsPanel({ canManage, onAuditChange, openCreateTrigger }: Pr
             })}
             {!visibleRepairs.length && (
               <tr>
-                <td colSpan={8} style={{ textAlign: "center", padding: "36px", color: "#64748b" }}>
+                <td colSpan={8} style={{ textAlign: "center", padding: "36px", color: "var(--muted)" }}>
                   {loading ? "Loading workshop repairs..." : "No customer repair jobs match the selected filter."}
                 </td>
               </tr>
