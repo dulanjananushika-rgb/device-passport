@@ -157,7 +157,7 @@ export function LoginForm({ shopName, demo = false }: { shopName: string; demo?:
       <div className="local-login-note">
         <strong>Demo Credentials &amp; Safety</strong>
         <span>
-          Demo password: <code style={{ fontWeight: "bold", color: "#1c5c47" }}>devicepass</code> (shared with all demo accounts).
+          Demo password: <code style={{ fontWeight: "bold", color: "var(--forest-2)" }}>devicepass</code> (shared with all demo accounts).
           Changes may reset periodically. Fictional sample devices only.
         </span>
       </div>
