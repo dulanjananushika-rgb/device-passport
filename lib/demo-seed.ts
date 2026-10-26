@@ -72,12 +72,13 @@ export function seedPortfolioDemo(database: DatabaseSync) {
         index === 2 ? 0 : 1, index === 2 ? "" : "Demo Technician", now, index === 2 ? "" : now, now);
 
       if (sold) {
+        const seedHandoverToken = deviceId === "DVP-LK-240831" ? "1A3O9OkHlBbqlkr7zQ4Z-Fr9" : "FKgFjq3xHBTVgcThyrekwvn0";
         database.prepare(`
           UPDATE device_sales SET customer_name = ?, customer_email = ?, customer_phone = '',
-            invoice_reference = ?, sale_price_cents = ?, activated_by = 'Demo seed'
+            invoice_reference = ?, sale_price_cents = ?, handover_token = ?, activated_by = 'Demo seed'
           WHERE device_id = ?
         `).run(`Sample Customer ${index + 1}`, `customer${index + 1}@devicepassport.example`, `DEMO-SALE-${index + 1}`,
-          cost + 2200000, deviceId);
+          cost + 2200000, seedHandoverToken, deviceId);
         database.prepare("UPDATE devices SET technician = 'Demo Technician' WHERE id = ?").run(deviceId);
       } else {
         database.prepare("DELETE FROM device_sales WHERE device_id = ? AND invoice_reference LIKE 'LEGACY-%'").run(deviceId);
