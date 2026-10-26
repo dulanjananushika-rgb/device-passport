@@ -411,7 +411,7 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
             </div>
 
             <button className="icon-button" aria-label={`Notifications${activeNotificationCount ? ` (${activeNotificationCount})` : ""}`} onClick={openNotifications}>N{activeNotificationCount > 0 && <small>{activeNotificationCount > 9 ? "9+" : activeNotificationCount}</small>}</button>
-            {canTestDevices && <button className="button primary" onClick={() => setModalOpen(true)}>+ New device test</button>}
+            {canTestDevices && <button type="button" className="button primary" onClick={() => setModalOpen(true)}>+ New device test</button>}
           </div>
         </header>
 
@@ -646,7 +646,7 @@ function formatConnectedDate(value: string) {
 }
 
 function NavButton({ icon, label, active, onClick }: { icon: string; label: string; active: boolean; onClick: () => void }) {
-  return <button className={`nav-item ${active ? "active" : ""}`} onClick={onClick} aria-current={active ? "page" : undefined}><span className="nav-icon" aria-hidden="true">{icon}</span><span>{label}</span></button>;
+  return <button type="button" className={`nav-item ${active ? "active" : ""}`} onClick={onClick} aria-current={active ? "page" : undefined}><span className="nav-icon" aria-hidden="true">{icon}</span><span>{label}</span></button>;
 }
 
 function Overview({ records, readyCount, soldCount, expiringCount, reviewCount, openClaimCount, canCreate, onNewTest, onViewDevices, onViewSales }: { records: DeviceRecord[]; readyCount: number; soldCount: number; expiringCount: number; reviewCount: number; openClaimCount: number; canCreate: boolean; onNewTest: () => void; onViewDevices: () => void; onViewSales: () => void }) {
@@ -654,7 +654,7 @@ function Overview({ records, readyCount, soldCount, expiringCount, reviewCount, 
   return (
     <>
       <section className="hero">
-        <div className="hero-copy"><div className="hero-kicker">Trust, made visible</div><h2>Every refurbished laptop deserves proof.</h2><p>Run a consistent health test, activate coverage at handover, and keep the warranty in one place from intake to after-sales.</p><div className="hero-actions">{canCreate && <button className="button primary" onClick={onNewTest}>+ Test a laptop</button>}{readyCount > 0 && <button className="button secondary" onClick={onViewSales}>Activate a sale</button>}{latest && <a className="text-link hero-passport-link" href={`/passport/${latest.id}`}>Open latest passport</a>}</div></div>
+        <div className="hero-copy"><div className="hero-kicker">Trust, made visible</div><h2>Every refurbished laptop deserves proof.</h2><p>Run a consistent health test, activate coverage at handover, and keep the warranty in one place from intake to after-sales.</p><div className="hero-actions">{canCreate && <button type="button" className="button primary" onClick={onNewTest}>+ Test a laptop</button>}{readyCount > 0 && <button type="button" className="button secondary" onClick={onViewSales}>Activate a sale</button>}{latest && <a className="text-link hero-passport-link" href={`/passport/${latest.id}`}>Open latest passport</a>}</div></div>
         {latest && <div className="hero-proof" aria-label="Latest verified device summary"><div className="proof-top"><div><div className="proof-label">Latest passport</div><div className="proof-device">{latest.name}</div></div><div className="grade-badge">{latest.grade}</div></div><div className="health-meter"><div className="health-row"><span>Overall health</span><strong>{latest.score} / 100</strong></div><div className="meter"><span style={{ width: `${latest.score}%` }} /></div></div><div className="proof-meta"><div><span>Battery</span><strong>{latest.batteryHealth}% health</strong></div><div><span>Storage</span><strong>{latest.storageHealth}% healthy</strong></div><div><span>Test ID</span><strong>{latest.id}</strong></div><div><span>Status</span><strong>{latest.status}</strong></div></div></div>}
       </section>
       <section className="stats" aria-label="Business summary"><Stat label="Total passports" value={String(records.length)} indicator="Live DB" /><Stat label="Ready to sell" value={String(readyCount)} indicator="Verified stock" /><Stat label="Warranties activated" value={String(soldCount)} indicator="Customer handovers" /><Stat label="Expiring in 30 days" value={String(expiringCount)} indicator={expiringCount ? "Follow up" : "Clear"} /></section>

@@ -5317,3 +5317,519 @@ body.dark {
   padding: 12px !important;
   border-radius: 16px !important;
 }
+
+/* ==========================================================================
+   DEEP COMMERCIAL DARK MODE ENGINE - FULL SYSTEM & PUBLIC PAGES POLISH
+   ========================================================================== */
+
+/* 1. Public Passport Page (/passport/[id]) */
+[data-theme="dark"] .passport-page {
+  background: radial-gradient(circle at 15% 0, rgba(16, 185, 129, 0.12), transparent 25rem), #090d16 !important;
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .passport-card {
+  background: #0f172a !important;
+  border: 1px solid #1f293d !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5) !important;
+}
+[data-theme="dark"] .passport-hero {
+  background: radial-gradient(circle at 90% 20%, rgba(16, 185, 129, 0.18), transparent 14rem), #064e3b !important;
+}
+[data-theme="dark"] .passport-side {
+  background: #0d1527 !important;
+  border-left: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .test-card {
+  background: #17212f !important;
+  border: 1px solid #1f293d !important;
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .test-card-head strong {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .test-card p {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .test-card-failed {
+  background: #2a1518 !important;
+  border-color: #7f1d1d !important;
+}
+[data-theme="dark"] .passport-notes p {
+  background: #17212f !important;
+  border: 1px solid #1f293d !important;
+  color: #cbd5e1 !important;
+}
+[data-theme="dark"] .passport-photo-grid figure {
+  background: #17212f !important;
+  border: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .spec-row {
+  border-bottom: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .spec-row span {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .spec-row strong {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .qr-description {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .verified-chip {
+  background: #064e3b !important;
+  color: #6ee7b7 !important;
+  border: 1px solid #047857 !important;
+}
+[data-theme="dark"] .interactive-heading > span {
+  background: #064e3b !important;
+  color: #6ee7b7 !important;
+  border: 1px solid #047857 !important;
+}
+
+/* 2. Public Claim & Tracking (/claim/[token] & /passport/[id]/claim) */
+[data-theme="dark"] .claim-page,
+[data-theme="dark"] .tracking-page {
+  background: radial-gradient(circle at 12% 0, rgba(16, 185, 129, 0.12), transparent 27rem), #090d16 !important;
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .claim-layout {
+  background: #0f172a !important;
+  border: 1px solid #1f293d !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5) !important;
+}
+[data-theme="dark"] .claim-device-card {
+  background: radial-gradient(circle at 90% 10%, rgba(16, 185, 129, 0.18), transparent 14rem), #064e3b !important;
+}
+[data-theme="dark"] .claim-form-card {
+  background: #0f172a !important;
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .claim-form-card h2 {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .claim-form label,
+[data-theme="dark"] .claim-update-fields label {
+  color: #cbd5e1 !important;
+}
+[data-theme="dark"] .claim-form input,
+[data-theme="dark"] .claim-form select,
+[data-theme="dark"] .claim-form textarea,
+[data-theme="dark"] .claim-update-fields select,
+[data-theme="dark"] .claim-update-fields textarea {
+  background: #17212f !important;
+  border: 1px solid #334155 !important;
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .claim-form input:focus,
+[data-theme="dark"] .claim-form select:focus,
+[data-theme="dark"] .claim-form textarea:focus {
+  border-color: #10b981 !important;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18) !important;
+}
+[data-theme="dark"] .claim-photo,
+[data-theme="dark"] .claim-photo-add {
+  background: #17212f !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+[data-theme="dark"] .tracking-card {
+  background: #0f172a !important;
+  border: 1px solid #1f293d !important;
+  color: #f8fafc !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4) !important;
+}
+[data-theme="dark"] .tracking-card h2 {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .tracking-card dl div {
+  border-bottom: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .tracking-card dl dt {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .tracking-card dl dd {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .tracking-description {
+  background: #17212f !important;
+  border: 1px solid #1f293d !important;
+  color: #cbd5e1 !important;
+}
+[data-theme="dark"] .claim-timeline article:not(:last-child)::before {
+  background: #334155 !important;
+}
+[data-theme="dark"] .claim-timeline strong {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .claim-timeline time,
+[data-theme="dark"] .claim-timeline small {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .claim-timeline p {
+  color: #cbd5e1 !important;
+}
+
+/* 3. New Test Modal Wizard (Stages 1, 2, 3) */
+[data-theme="dark"] .connected-run-list button {
+  background: #17212f !important;
+  border: 1px solid #1f293d !important;
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .connected-run-list button:hover {
+  background: #1c2b3d !important;
+  border-color: #10b981 !important;
+}
+[data-theme="dark"] .connected-empty {
+  background: #17212f !important;
+  border: 1px dashed #334155 !important;
+  color: #cbd5e1 !important;
+}
+[data-theme="dark"] .drop-zone {
+  background: #17212f !important;
+  border: 1.5px dashed #334155 !important;
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .drop-zone h3 {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .drop-zone p {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .step::before {
+  background: #1f293d !important;
+  border-color: #334155 !important;
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .step.active::before {
+  background: #10b981 !important;
+  border-color: #059669 !important;
+  color: #ffffff !important;
+}
+[data-theme="dark"] .step.active {
+  color: #34d399 !important;
+}
+[data-theme="dark"] .step:not(:last-child)::after {
+  background: #1f293d !important;
+}
+[data-theme="dark"] .import-success {
+  background: #064e3b22 !important;
+  border: 1px solid #047857 !important;
+}
+[data-theme="dark"] .import-success h3 {
+  color: #34d399 !important;
+}
+[data-theme="dark"] .import-grid div {
+  background: #111827 !important;
+  border: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .import-grid span {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .import-grid strong {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .inspection-control {
+  border-bottom: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .inspection-control strong {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .inspection-control span {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .check-options button {
+  background: #17212f !important;
+  border: 1px solid #334155 !important;
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .check-options button.selected.pass {
+  background: #064e3b !important;
+  border-color: #10b981 !important;
+  color: #6ee7b7 !important;
+}
+[data-theme="dark"] .check-options button.selected.fail {
+  background: #7f1d1d !important;
+  border-color: #ef4444 !important;
+  color: #fca5a5 !important;
+}
+[data-theme="dark"] .notes-field {
+  color: #cbd5e1 !important;
+}
+[data-theme="dark"] .notes-field textarea {
+  background: #17212f !important;
+  border: 1px solid #334155 !important;
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .score-breakdown div {
+  background: #17212f !important;
+  border: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .score-breakdown span {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .score-breakdown strong {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .approval-check {
+  background: #17212f !important;
+  border: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .approval-check strong {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .approval-check small {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .photo-add {
+  background: #17212f !important;
+  border-color: #334155 !important;
+  color: #34d399 !important;
+}
+[data-theme="dark"] .publish-success {
+  background: #064e3b22 !important;
+  border: 1px solid #047857 !important;
+}
+
+/* 4. Warranties / Service Desk Panel */
+[data-theme="dark"] .claim-filters button {
+  background: #17212f !important;
+  border: 1px solid #1f293d !important;
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .claim-filters button.active {
+  background: #10b981 !important;
+  border-color: #059669 !important;
+  color: #ffffff !important;
+}
+[data-theme="dark"] .claim-list-item {
+  background: #111827 !important;
+  border: 1px solid #1f293d !important;
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .claim-list-item:hover {
+  background: #172333 !important;
+}
+[data-theme="dark"] .claim-list-item.selected {
+  background: #172333 !important;
+  border-left: 3px solid #10b981 !important;
+}
+[data-theme="dark"] .claim-detail-grid > div {
+  background: #17212f !important;
+  border: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .claim-detail-grid span {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .claim-detail-grid strong {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .claim-description-box {
+  background: #17212f !important;
+  border: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .claim-description-box span {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .claim-description-box p {
+  color: #cbd5e1 !important;
+}
+[data-theme="dark"] .service-plan-box {
+  background: #111827 !important;
+  border: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .service-plan-box h4 {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .service-plan-box p {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .service-plan-fields label {
+  color: #cbd5e1 !important;
+}
+[data-theme="dark"] .service-plan-fields input,
+[data-theme="dark"] .service-plan-fields select,
+[data-theme="dark"] .service-plan-fields textarea {
+  background: #17212f !important;
+  border: 1px solid #334155 !important;
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .internal-note-history {
+  background: #17212f !important;
+  border: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .internal-note-history article {
+  border-top: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .internal-note-history p {
+  color: #cbd5e1 !important;
+}
+[data-theme="dark"] .internal-note-history small {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .claim-update-box {
+  background: #111827 !important;
+  border: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .claim-update-box h4 {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .claim-update-box p {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .claim-update-fields label {
+  color: #cbd5e1 !important;
+}
+[data-theme="dark"] .claim-update-fields select,
+[data-theme="dark"] .claim-update-fields textarea {
+  background: #17212f !important;
+  border: 1px solid #334155 !important;
+  color: #f8fafc !important;
+}
+
+/* 5. Analytics & Financial Ledger */
+[data-theme="dark"] .analytics-scorecard {
+  background: #0f172a !important;
+  border: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .analytics-scorecard > div {
+  border-right: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .finance-chart {
+  background: linear-gradient(to top, rgba(31, 41, 61, 0.6) 1px, transparent 1px) !important;
+  background-size: 100% 25% !important;
+}
+[data-theme="dark"] .finance-chart-month strong {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .profit-leader-list > div {
+  border-bottom: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .profit-leader-list strong {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .profit-leader-list b {
+  color: #34d399 !important;
+}
+[data-theme="dark"] .analytics-table th {
+  background: #17212f !important;
+  color: #94a3b8 !important;
+  border-bottom: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .analytics-table td {
+  border-top: 1px solid #1f293d !important;
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .technician-grid article {
+  background: #17212f !important;
+  border: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .money-input input {
+  background: #17212f !important;
+  border: 1px solid #334155 !important;
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .data-quality-banner {
+  background: #2b1f0c !important;
+  border: 1px solid #78350f !important;
+  color: #fde68a !important;
+}
+
+/* 6. Staff, Audit & Settings */
+[data-theme="dark"] .staff-create-card,
+[data-theme="dark"] .settings-card,
+[data-theme="dark"] .account-card,
+[data-theme="dark"] .audit-panel {
+  background: #111827 !important;
+  border: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .staff-create-form label,
+[data-theme="dark"] .staff-editor-fields label,
+[data-theme="dark"] .settings-fields label,
+[data-theme="dark"] .account-password-fields label {
+  color: #cbd5e1 !important;
+}
+[data-theme="dark"] .staff-create-form input,
+[data-theme="dark"] .staff-create-form select,
+[data-theme="dark"] .staff-editor-fields input,
+[data-theme="dark"] .staff-editor-fields select,
+[data-theme="dark"] .settings-fields input,
+[data-theme="dark"] .settings-fields select,
+[data-theme="dark"] .settings-fields textarea,
+[data-theme="dark"] .account-password-fields input {
+  background: #17212f !important;
+  border: 1px solid #334155 !important;
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .staff-list-item {
+  background: #17212f !important;
+  border: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .staff-list-item.selected {
+  background: #1c2b3d !important;
+  border-left: 3px solid #10b981 !important;
+}
+[data-theme="dark"] .audit-list article {
+  border-top: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .audit-list article > span {
+  background: #1e293b !important;
+  color: #34d399 !important;
+}
+[data-theme="dark"] .audit-list strong {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .audit-list small {
+  color: #94a3b8 !important;
+}
+
+/* 7. Notification Center */
+[data-theme="dark"] .notification-filters button {
+  background: #17212f !important;
+  border: 1px solid #1f293d !important;
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .notification-filters button.active {
+  background: #10b981 !important;
+  border-color: #059669 !important;
+  color: #ffffff !important;
+}
+[data-theme="dark"] .notification-recipient-grid > div {
+  background: #17212f !important;
+  border: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .notification-recipient-grid span {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .notification-recipient-grid strong {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .message-preview {
+  background: #17212f !important;
+  border: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .message-preview p {
+  color: #cbd5e1 !important;
+}
+[data-theme="dark"] .composer-note {
+  background: #111827 !important;
+  border: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .composer-note strong {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .composer-note p {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] .notification-history {
+  background: #17212f !important;
+  border: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .notification-history article {
+  border-top: 1px solid #1f293d !important;
+}
+[data-theme="dark"] .notification-history strong {
+  color: #f8fafc !important;
+}
+[data-theme="dark"] .notification-history small {
+  color: #94a3b8 !important;
+}
