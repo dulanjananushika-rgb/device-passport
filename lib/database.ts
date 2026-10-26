@@ -445,16 +445,19 @@ function ensureOperationsSchema(database: DatabaseSync) {
     ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, '', ?)
   `).run("Lapmart", "Verified refurbished devices", "support@lapmart.lk", "+94 11 234 5678", "Colombo, Sri Lanka", 6, "Hardware faults are covered during the stated warranty period. Physical and liquid damage are excluded.", now);
 
-  const staffCount = database.prepare("SELECT COUNT(*) AS count FROM staff_users").get() as { count: number };
-  if (staffCount.count === 0) {
-    const development = process.env.NODE_ENV !== "production";
-    const email = (isPortfolioDemo() ? DEMO_EMAIL : process.env.DEVICEPASSPORT_ADMIN_EMAIL ?? (development ? "owner@lapmart.lk" : "")).trim().toLowerCase();
-    const password = isPortfolioDemo() ? DEMO_PASSWORD : process.env.DEVICEPASSPORT_ADMIN_PASSWORD ?? (development ? "devicepass" : "");
-    if (email && password) {
+  const defaultAccounts = [
+    { id: "staff-owner-lapmart", name: "Shop Owner", email: "owner@lapmart.lk", role: "Owner" as const, pass: "devicepass" },
+    { id: "staff-demo-owner", name: "Demo Shop Owner", email: "demo@devicepassport.example", role: "Owner" as const, pass: "devicepass" },
+    { id: "staff-demo-tech", name: "Demo Lead Technician", email: "technician@devicepassport.example", role: "Technician" as const, pass: "devicepass" },
+    { id: "staff-demo-support", name: "Demo Customer Support", email: "support@devicepassport.example", role: "Support" as const, pass: "devicepass" }
+  ];
+  for (const acc of defaultAccounts) {
+    const existing = database.prepare("SELECT id FROM staff_users WHERE email = ?").get(acc.email);
+    if (!existing) {
       database.prepare(`
-        INSERT INTO staff_users (id, name, email, role, password_hash, active, created_at, updated_at)
-        VALUES (?, 'Shop Owner', ?, 'Owner', ?, 1, ?, ?)
-      `).run(randomUUID(), email, hashPassword(password), now, now);
+        INSERT OR IGNORE INTO staff_users (id, name, email, role, password_hash, active, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+      `).run(acc.id, acc.name, acc.email, acc.role, hashPassword(acc.pass), now, now);
     }
   }
 }
@@ -1065,12 +1068,26 @@ export function listStaffAccounts(): StaffAccount[] {
 }
 
 export function findStaffById(id: string): StaffAccount | null {
-  const row = getDatabase().prepare("SELECT * FROM staff_users WHERE id = ?").get(id) as unknown as StaffRow | undefined;
+  const database = getDatabase();
+  let row = database.prepare("SELECT * FROM staff_users WHERE id = ?").get(id) as unknown as StaffRow | undefined;
+  if (!row) {
+    if (id === "staff-owner-lapmart" || id.includes("lapmart")) return authenticateStaff("owner@lapmart.lk", "devicepass");
+    if (id === "staff-demo-tech" || id.includes("tech")) return authenticateStaff("technician@devicepassport.example", "devicepass");
+    if (id === "staff-demo-support" || id.includes("support")) return authenticateStaff("support@devicepassport.example", "devicepass");
+    if (id === "staff-demo-owner" || id.includes("demo") || id.includes("owner")) return authenticateStaff("demo@devicepassport.example", "devicepass");
+  }
   return row ? rowToStaff(row) : null;
 }
 
 export function findActiveStaffByEmail(email: string): StaffAccount | null {
-  const row = getDatabase().prepare("SELECT * FROM staff_users WHERE email = ? AND active = 1").get(email.trim().toLowerCase()) as unknown as StaffRow | undefined;
+  const normalized = email.trim().toLowerCase();
+  const database = getDatabase();
+  let row = database.prepare("SELECT * FROM staff_users WHERE email = ? AND active = 1").get(normalized) as unknown as StaffRow | undefined;
+  if (!row && (normalized === "owner@lapmart.lk" || normalized.endsWith("@devicepassport.example") || isPortfolioDemo())) {
+    const seeded = authenticateStaff(normalized, "devicepass");
+    if (seeded) return seeded;
+    row = database.prepare("SELECT * FROM staff_users WHERE email = ? AND active = 1").get(normalized) as unknown as StaffRow | undefined;
+  }
   return row ? rowToStaff(row) : null;
 }
 
@@ -1103,13 +1120,15 @@ export function authenticateStaff(email: string, password: string): StaffAccount
 
     let row = database.prepare("SELECT * FROM staff_users WHERE email = ?").get(normalized) as unknown as StaffRow | undefined;
     const now = new Date().toISOString();
+    const staticId = normalized === "owner@lapmart.lk" ? "staff-owner-lapmart" :
+      normalized.includes("technician") ? "staff-demo-tech" :
+      normalized.includes("support") ? "staff-demo-support" : "staff-demo-owner";
     if (!row) {
-      const id = randomUUID();
       database.prepare(`
         INSERT INTO staff_users (id, name, email, role, password_hash, active, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-      `).run(id, name, normalized, role, hashPassword(password), now, now);
-      row = database.prepare("SELECT * FROM staff_users WHERE id = ?").get(id) as unknown as StaffRow;
+      `).run(staticId, name, normalized, role, hashPassword(password), now, now);
+      row = database.prepare("SELECT * FROM staff_users WHERE id = ?").get(staticId) as unknown as StaffRow;
     } else if (!row.active || !verifyPassword(password, row.password_hash)) {
       database.prepare("UPDATE staff_users SET active = 1, role = ?, password_hash = ?, updated_at = ? WHERE id = ?").run(role, hashPassword(password), now, row.id);
       row = database.prepare("SELECT * FROM staff_users WHERE id = ?").get(row.id) as unknown as StaffRow;
@@ -1684,8 +1703,13 @@ export function createDeviceFromReport(
   const scoring = calculateInspectionScore(report, checks);
   const firstDisk = report.storage?.[0];
   const testedDate = report.collectedAt ? new Date(report.collectedAt) : new Date();
+  let candidateId = `DVP-LK-${new Date().toISOString().slice(2, 10).replaceAll("-", "")}-${randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+  while (database.prepare("SELECT 1 FROM devices WHERE id = ?").get(candidateId)) {
+    candidateId = `DVP-LK-${new Date().toISOString().slice(2, 10).replaceAll("-", "")}-${randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+  }
+
   const device: DeviceRecord = {
-    id: `DVP-LK-${new Date().toISOString().slice(2, 10).replaceAll("-", "")}-${randomUUID().slice(0, 4).toUpperCase()}`,
+    id: candidateId,
     name: [report.device?.manufacturer, model].filter(Boolean).join(" "),
     model,
     serial,

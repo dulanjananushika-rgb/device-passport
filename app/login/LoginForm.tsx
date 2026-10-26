@@ -45,8 +45,7 @@ export function LoginForm({ shopName, demo = false }: { shopName: string; demo?:
         }
       }
 
-      router.push("/");
-      router.refresh();
+      window.location.href = "/";
     } catch {
       setError("Network connection issue. Please try again.");
       setSubmitting(false);
@@ -73,8 +72,7 @@ export function LoginForm({ shopName, demo = false }: { shopName: string; demo?:
         return;
       }
 
-      router.push("/");
-      router.refresh();
+      window.location.href = "/";
     } catch {
       setError("Sign in error. Please check your connection.");
       setSubmitting(false);

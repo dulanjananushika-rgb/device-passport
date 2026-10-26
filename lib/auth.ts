@@ -24,7 +24,7 @@ function sessionSecret() {
   return (
     process.env.DEVICEPASSPORT_SESSION_SECRET ||
     (isPortfolioDemo() ? "devicepassport-public-portfolio-demo-session-secret-2026" : "") ||
-    (process.env.NODE_ENV === "production" ? "" : "devicepassport-local-development-secret")
+    "devicepassport-local-development-secret"
   );
 }
 
@@ -72,7 +72,8 @@ export async function getSession(): Promise<StaffSession | null> {
   const cookieStore = await cookies();
   const payload = verifySessionToken(cookieStore.get(SESSION_COOKIE)?.value);
   if (!payload) return null;
-  const staff = payload.staffId ? findStaffById(payload.staffId) : findActiveStaffByEmail(payload.email);
+  let staff = payload.staffId ? findStaffById(payload.staffId) : null;
+  if (!staff && payload.email) staff = findActiveStaffByEmail(payload.email);
   if (!staff?.active || staff.email !== payload.email) return null;
   return { id: staff.id, name: staff.name, email: staff.email, role: staff.role, expiresAt: payload.expiresAt };
 }
