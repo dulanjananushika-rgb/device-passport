@@ -8,6 +8,9 @@ import {
   type ProcurementStatus,
   type RefurbishmentCategory,
   type StockIntake,
+  rmaStatuses,
+  type SupplierRmaRecord,
+  type RmaStatus,
 } from "../../lib/procurement-types";
 
 type IntakeFilter = "Active" | ProcurementStatus | "All";
@@ -29,6 +32,10 @@ export function ProcurementPanel({ procurement, canManage, onProcurementChange, 
   const [notes, setNotes] = useState(initialSelected?.notes ?? "");
   const [purchaseCostLkr, setPurchaseCostLkr] = useState(initialSelected ? fromCents(initialSelected.purchaseCostCents) : "0");
   const [createOpen, setCreateOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkCsvText, setBulkCsvText] = useState("");
+  const [bulkInvoice, setBulkInvoice] = useState("CONTAINER-BATCH");
+  const [bulkResult, setBulkResult] = useState<{ totalRows: number; importedCount: number; errors: Array<{ row: number; serial: string; error: string }> } | null>(null);
   const [supplierOpen, setSupplierOpen] = useState(false);
   const [intakeForm, setIntakeForm] = useState<IntakeForm>(() => emptyIntake(today, procurement.suppliers[0]?.id ?? ""));
   const [supplierForm, setSupplierForm] = useState({ name: "", contactName: "", email: "", phone: "" });
@@ -36,6 +43,98 @@ export function ProcurementPanel({ procurement, canManage, onProcurementChange, 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  const [rmaOpen, setRmaOpen] = useState(false);
+  const [rmas, setRmas] = useState<SupplierRmaRecord[]>([]);
+  const [rmaMetrics, setRmaMetrics] = useState<{ totalCount: number; pendingCount: number; resolvedCount: number; totalCreditCents: number; formattedCredit: string } | null>(null);
+  const [rmaFilter, setRmaFilter] = useState("All");
+  const [newRmaOpen, setNewRewOpen] = useState(false);
+  const [rmaForm, setRmaForm] = useState({
+    supplierId: procurement.suppliers[0]?.id || "",
+    itemType: "Spare Part" as "Spare Part" | "Device / Laptop",
+    itemName: "",
+    serial: "",
+    faultDescription: "",
+    notes: "",
+  });
+  const [selectedRmaForUpdate, setSelectedRmaForUpdate] = useState<SupplierRmaRecord | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<RmaStatus>("Dispatched");
+  const [updateCreditLkr, setUpdateCreditLkr] = useState("");
+  const [updateReplacementSerial, setUpdateReplacementSerial] = useState("");
+  const [updateNotes, setUpdateNotes] = useState("");
+
+  async function loadRmas() {
+    try {
+      const res = await fetch("/api/procurement/rmas");
+      if (res.ok) {
+        const data = await res.json();
+        setRmas(data.rmas || []);
+        setRmaMetrics(data.metrics || null);
+      }
+    } catch {}
+  }
+
+  async function submitRma(e: FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/procurement/rmas", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(rmaForm),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to log RMA");
+      setNewRewOpen(false);
+      setRmaForm({
+        supplierId: procurement.suppliers[0]?.id || "",
+        itemType: "Spare Part",
+        itemName: "",
+        serial: "",
+        faultDescription: "",
+        notes: "",
+      });
+      await loadRmas();
+      await onAuditChange();
+      setSuccess(`Logged supplier RMA #${data.rma.rmaNumber} successfully.`);
+    } catch (err: any) {
+      setError(err.message || "Failed to log RMA");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function submitRmaUpdate(rmaId: string) {
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/procurement/rmas/${rmaId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          status: updateStatus,
+          creditLkr: updateCreditLkr || undefined,
+          replacementSerial: updateReplacementSerial || undefined,
+          notes: updateNotes || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update RMA");
+      setSelectedRmaForUpdate(null);
+      await loadRmas();
+      await onAuditChange();
+      setSuccess(`Updated RMA #${data.rma.rmaNumber} to ${data.rma.status}.`);
+    } catch (err: any) {
+      setError(err.message || "Failed to update RMA");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const visibleRmas = useMemo(() => {
+    return rmas.filter((r) => rmaFilter === "All" || r.status === rmaFilter);
+  }, [rmas, rmaFilter]);
 
   const visibleIntakes = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -65,6 +164,32 @@ export function ProcurementPanel({ procurement, canManage, onProcurementChange, 
     const preferred = next.intakes.find((item) => item.id === preferredId) ?? next.intakes[0];
     if (preferred) syncDetail(preferred);
     return next;
+  }
+
+  async function submitBulkImport(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!bulkCsvText.trim()) return;
+    setSaving(true);
+    setError("");
+    setBulkResult(null);
+    try {
+      const response = await fetch("/api/procurement/intakes/bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ csvContent: bulkCsvText, supplierInvoice: bulkInvoice }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Bulk import failed");
+      setBulkResult(data.result);
+      if (data.result.importedCount > 0) {
+        setSuccess(`Successfully imported ${data.result.importedCount} laptops!`);
+        await Promise.all([refresh(), onAuditChange()]);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to process bulk import");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function submitSupplier(event: FormEvent<HTMLFormElement>) {
@@ -166,7 +291,19 @@ export function ProcurementPanel({ procurement, canManage, onProcurementChange, 
     <section className="page-section procurement-page">
       <div className="section-head procurement-section-head">
         <div><div className="eyebrow">Purchase → proof → profit</div><h2>Supplier & inventory intake</h2><p>Track every device from supplier invoice to customer handover.</p></div>
-        {canManage && <button className="button primary" type="button" onClick={() => { setCreateOpen((open) => !open); setError(""); }}>{createOpen ? "Close intake form" : "+ New stock intake"}</button>}
+        {canManage && (
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="button secondary" type="button" onClick={() => { setBulkOpen((b) => !b); setCreateOpen(false); setError(""); }}>
+              {bulkOpen ? "Close bulk import" : "📋 Bulk Excel / CSV Import"}
+            </button>
+            <button className="button secondary" type="button" onClick={() => { setRmaOpen((r) => !r); setCreateOpen(false); setBulkOpen(false); setError(""); if (!rmaOpen) loadRmas(); }}>
+              {rmaOpen ? "Close RMAs" : "🛡️ Supplier RMAs"}
+            </button>
+            <button className="button primary" type="button" onClick={() => { setCreateOpen((open) => !open); setBulkOpen(false); setError(""); }}>
+              {createOpen ? "Close intake form" : "+ New stock intake"}
+            </button>
+          </div>
+        )}
       </div>
 
       <section className="stats procurement-stats" aria-label="Procurement summary">
@@ -176,7 +313,337 @@ export function ProcurementPanel({ procurement, canManage, onProcurementChange, 
         <ProcurementStat label={canManage ? "Stock investment" : "Ready to sell"} value={canManage ? money(procurement.metrics.inventoryValueCents) : String(procurement.metrics.ready)} note={procurement.metrics.agedStock ? `${procurement.metrics.agedStock} aged 90d+` : "Aging clear"} />
       </section>
 
+      {rmaOpen && canManage && (
+        <section className="panel rma-panel" style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '24px', marginBottom: '24px' }}>
+          <div className="panel-head" style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '20px' }}>🛡️</span>
+                <h3 className="panel-title" style={{ fontSize: '18px', fontWeight: '700', color: '#f8fafc' }}>Supplier RMA & Defective Parts Tracker</h3>
+              </div>
+              <p className="panel-subtitle" style={{ color: '#94a3b8', fontSize: '13px', marginTop: '4px' }}>
+                Track bad NVMe SSDs, swollen batteries, and dead screens returned to wholesale importers for replacement or credit notes.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                className="button primary small"
+                onClick={() => setNewRewOpen((o) => !o)}
+              >
+                {newRmaOpen ? "Cancel" : "+ Log Defective Return / RMA"}
+              </button>
+            </div>
+          </div>
+
+          {rmaMetrics && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+              <div style={{ background: '#1e293b', padding: '12px 16px', borderRadius: '8px', border: '1px solid #334155' }}>
+                <span style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase' }}>Total RMAs</span>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#f8fafc', marginTop: '4px' }}>{rmaMetrics.totalCount}</div>
+              </div>
+              <div style={{ background: '#1e293b', padding: '12px 16px', borderRadius: '8px', border: '1px solid #f59e0b44' }}>
+                <span style={{ fontSize: '11px', color: '#f59e0b', textTransform: 'uppercase' }}>Pending / In Review</span>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#fbbf24', marginTop: '4px' }}>{rmaMetrics.pendingCount}</div>
+              </div>
+              <div style={{ background: '#1e293b', padding: '12px 16px', borderRadius: '8px', border: '1px solid #10b98144' }}>
+                <span style={{ fontSize: '11px', color: '#10b981', textTransform: 'uppercase' }}>Resolved / Replaced</span>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#34d399', marginTop: '4px' }}>{rmaMetrics.resolvedCount}</div>
+              </div>
+              <div style={{ background: '#1e293b', padding: '12px 16px', borderRadius: '8px', border: '1px solid #38bdf844' }}>
+                <span style={{ fontSize: '11px', color: '#38bdf8', textTransform: 'uppercase' }}>Credit Recovered</span>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#38bdf8', marginTop: '4px' }}>{rmaMetrics.formattedCredit}</div>
+              </div>
+            </div>
+          )}
+
+          {newRmaOpen && (
+            <form onSubmit={submitRma} style={{ background: '#1e293b', border: '1px solid #475569', borderRadius: '10px', padding: '18px', marginBottom: '20px' }}>
+              <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#f8fafc', marginBottom: '12px' }}>New Supplier Defect Return</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#cbd5e1' }}>
+                  Supplier
+                  <select
+                    style={{ background: '#0f172a', border: '1px solid #334155', color: '#f8fafc', padding: '8px', borderRadius: '6px' }}
+                    value={rmaForm.supplierId}
+                    onChange={(e) => setRmaForm({ ...rmaForm, supplierId: e.target.value })}
+                  >
+                    {procurement.suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#cbd5e1' }}>
+                  Item Category
+                  <select
+                    style={{ background: '#0f172a', border: '1px solid #334155', color: '#f8fafc', padding: '8px', borderRadius: '6px' }}
+                    value={rmaForm.itemType}
+                    onChange={(e) => setRmaForm({ ...rmaForm, itemType: e.target.value as any })}
+                  >
+                    <option value="Spare Part">Spare Part (SSD, Battery, Screen, RAM)</option>
+                    <option value="Device / Laptop">Device / Whole Laptop</option>
+                  </select>
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#cbd5e1' }}>
+                  Item Description
+                  <input
+                    required
+                    style={{ background: '#0f172a', border: '1px solid #334155', color: '#f8fafc', padding: '8px', borderRadius: '6px' }}
+                    placeholder="e.g. Kingston NV2 500GB NVMe"
+                    value={rmaForm.itemName}
+                    onChange={(e) => setRmaForm({ ...rmaForm, itemName: e.target.value })}
+                  />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#cbd5e1' }}>
+                  Serial Number
+                  <input
+                    required
+                    style={{ background: '#0f172a', border: '1px solid #334155', color: '#f8fafc', padding: '8px', borderRadius: '6px' }}
+                    placeholder="e.g. 50026B7685D12345"
+                    value={rmaForm.serial}
+                    onChange={(e) => setRmaForm({ ...rmaForm, serial: e.target.value })}
+                  />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#cbd5e1', gridColumn: '1 / -1' }}>
+                  Fault Description
+                  <input
+                    required
+                    style={{ background: '#0f172a', border: '1px solid #334155', color: '#f8fafc', padding: '8px', borderRadius: '6px' }}
+                    placeholder="e.g. Unreadable bad sectors on crystaldiskinfo / BSOD on boot"
+                    value={rmaForm.faultDescription}
+                    onChange={(e) => setRmaForm({ ...rmaForm, faultDescription: e.target.value })}
+                  />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#cbd5e1', gridColumn: '1 / -1' }}>
+                  Notes / Courier Ref
+                  <input
+                    style={{ background: '#0f172a', border: '1px solid #334155', color: '#f8fafc', padding: '8px', borderRadius: '6px' }}
+                    placeholder="Handed over to supplier agent / Waybill #58219"
+                    value={rmaForm.notes}
+                    onChange={(e) => setRmaForm({ ...rmaForm, notes: e.target.value })}
+                  />
+                </label>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
+                <button type="submit" className="button primary small" disabled={saving}>
+                  {saving ? "Saving..." : "Dispatched & Log RMA"}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {selectedRmaForUpdate && (
+            <div style={{ background: '#1e293b', border: '1px solid #38bdf8', borderRadius: '10px', padding: '18px', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#38bdf8' }}>Update RMA #{selectedRmaForUpdate.rmaNumber} ({selectedRmaForUpdate.itemName})</h4>
+                <button type="button" className="text-link" onClick={() => setSelectedRmaForUpdate(null)}>Cancel</button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#cbd5e1' }}>
+                  Status
+                  <select
+                    style={{ background: '#0f172a', border: '1px solid #334155', color: '#f8fafc', padding: '8px', borderRadius: '6px' }}
+                    value={updateStatus}
+                    onChange={(e) => setUpdateStatus(e.target.value as any)}
+                  >
+                    {rmaStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#cbd5e1' }}>
+                  Credit Amount (LKR)
+                  <input
+                    type="number"
+                    step="0.01"
+                    style={{ background: '#0f172a', border: '1px solid #334155', color: '#f8fafc', padding: '8px', borderRadius: '6px' }}
+                    placeholder="e.g. 14500"
+                    value={updateCreditLkr}
+                    onChange={(e) => setUpdateCreditLkr(e.target.value)}
+                  />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#cbd5e1' }}>
+                  Replacement Serial (if replaced)
+                  <input
+                    style={{ background: '#0f172a', border: '1px solid #334155', color: '#f8fafc', padding: '8px', borderRadius: '6px' }}
+                    placeholder="New replacement unit serial"
+                    value={updateReplacementSerial}
+                    onChange={(e) => setUpdateReplacementSerial(e.target.value)}
+                  />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#cbd5e1', gridColumn: '1 / -1' }}>
+                  Resolution Notes
+                  <input
+                    style={{ background: '#0f172a', border: '1px solid #334155', color: '#f8fafc', padding: '8px', borderRadius: '6px' }}
+                    placeholder="Supplier accepted under warranty, credit note CN-8941 deducted from invoice"
+                    value={updateNotes}
+                    onChange={(e) => setUpdateNotes(e.target.value)}
+                  />
+                </label>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
+                <button type="button" className="button primary small" disabled={saving} onClick={() => submitRmaUpdate(selectedRmaForUpdate.id)}>
+                  {saving ? "Updating..." : "Save RMA Resolution"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
+            {["All", ...rmaStatuses].map((st) => (
+              <button
+                key={st}
+                type="button"
+                className={`button small ${rmaFilter === st ? "primary" : "secondary"}`}
+                style={{ fontSize: '11px', padding: '4px 10px' }}
+                onClick={() => setRmaFilter(st)}
+              >
+                {st}
+              </button>
+            ))}
+          </div>
+
+          <div className="table-wrap">
+            <table className="analytics-table" style={{ width: '100%', fontSize: '13px' }}>
+              <thead>
+                <tr>
+                  <th>RMA #</th>
+                  <th>Supplier</th>
+                  <th>Item & Serial</th>
+                  <th>Fault</th>
+                  <th>Status</th>
+                  <th>Dispatched</th>
+                  <th>Resolution</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleRmas.map((r) => (
+                  <tr key={r.id}>
+                    <td><strong style={{ color: '#38bdf8' }}>{r.rmaNumber}</strong></td>
+                    <td>{r.supplierName}</td>
+                    <td>
+                      <div><strong>{r.itemName}</strong></div>
+                      <small style={{ color: '#94a3b8' }}>{r.serial} ({r.itemType})</small>
+                    </td>
+                    <td style={{ maxWidth: '200px' }}><small>{r.faultDescription}</small></td>
+                    <td>
+                      <span className={`status-badge ${r.status === 'Replaced' || r.status === 'Credit Note Issued' ? 'ready' : r.status === 'Rejected' ? 'needs-review' : 'awaiting'}`} style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px' }}>
+                        {r.status}
+                      </span>
+                    </td>
+                    <td><small>{r.dispatchedAt.slice(0, 10)}</small></td>
+                    <td>
+                      {r.creditAmountCents > 0 && <strong style={{ color: '#10b981' }}>{r.formattedCredit}</strong>}
+                      {r.replacementSerial && <div><small style={{ color: '#38bdf8' }}>Repl: {r.replacementSerial}</small></div>}
+                      {!r.creditAmountCents && !r.replacementSerial && <small style={{ color: '#64748b' }}>-</small>}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="button secondary small"
+                        style={{ fontSize: '11px', padding: '3px 8px' }}
+                        onClick={() => {
+                          setSelectedRmaForUpdate(r);
+                          setUpdateStatus(r.status);
+                          setUpdateCreditLkr(r.creditAmountCents ? (r.creditAmountCents / 100).toFixed(0) : "");
+                          setUpdateReplacementSerial(r.replacementSerial || "");
+                          setUpdateNotes(r.notes || "");
+                        }}
+                      >
+                        Update
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {!visibleRmas.length && (
+                  <tr>
+                    <td colSpan={8} style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
+                      No supplier RMAs matching filter.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       <div className="procurement-flow" aria-label="Inventory workflow">{["Supplier purchase", "Intake label", "Diagnostic test", "Refurbishment", "Ready / sold"].map((step, index) => <div key={step}><span>{index + 1}</span><strong>{step}</strong>{index < 4 && <i>→</i>}</div>)}</div>
+
+      {bulkOpen && canManage && (
+        <section className="panel bulk-importer" style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: '14px', padding: '24px', marginBottom: '24px' }}>
+          <div className="panel-head" style={{ marginBottom: '16px' }}>
+            <div>
+              <h3 className="panel-title" style={{ fontSize: '18px', fontWeight: '700', color: '#38bdf8' }}>Wholesale Container Excel / CSV Bulk Ingestion</h3>
+              <p className="panel-subtitle" style={{ color: '#94a3b8', fontSize: '13px' }}>
+                Copy-paste rows directly from Microsoft Excel or paste standard CSV text. 50+ laptops import in seconds.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="button secondary small"
+              onClick={() => {
+                setBulkCsvText(`Model,Serial,CostLkr,Processor,RAM,Storage,Grade,SupplierName,SupplierInvoice\nDell Latitude 7490,DEL7490-001,85000,Intel Core i5-8350U,8GB DDR4,256GB SSD,A,Tokyo Global Exports,TK-2026-99\nLenovo ThinkPad T480,TP480-002,92000,Intel Core i5-8250U,16GB DDR4,512GB SSD,A,Dubai Wholesale IT,DXB-771\nHP EliteBook 840 G5,HP840-003,89000,Intel Core i7-8550U,16GB DDR4,256GB SSD,B,Singapore IT Hub,SG-8812`);
+              }}
+            >
+              Paste Sample Template
+            </button>
+          </div>
+
+          <form onSubmit={submitBulkImport}>
+            <div style={{ marginBottom: '14px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#cbd5e1', marginBottom: '6px' }}>
+                Batch Supplier Invoice Ref:
+              </label>
+              <input
+                style={{ width: '300px', background: '#1e293b', border: '1px solid #334155', borderRadius: '6px', color: '#fff', padding: '8px 12px', fontSize: '14px' }}
+                value={bulkInvoice}
+                onChange={(e) => setBulkInvoice(e.target.value)}
+                required
+              />
+            </div>
+
+            <div style={{ marginBottom: '14px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#cbd5e1', marginBottom: '6px' }}>
+                CSV / Excel TSV Data (Header row required):
+              </label>
+              <textarea
+                style={{ width: '100%', height: '180px', background: '#0a0e17', border: '1px solid #334155', borderRadius: '8px', color: '#f1f5f9', fontFamily: 'monospace', fontSize: '12px', padding: '12px' }}
+                value={bulkCsvText}
+                onChange={(e) => setBulkCsvText(e.target.value)}
+                placeholder="Model,Serial,CostLkr,Processor,RAM,Storage,Grade,SupplierName,SupplierInvoice\n..."
+                required
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <button className="button primary" type="submit" disabled={saving}>
+                {saving ? "Importing container batch..." : "🚀 Ingest Wholesale Batch"}
+              </button>
+              {bulkCsvText && (
+                <span style={{ fontSize: '12px', color: '#94a3b8' }}>
+                  ~{bulkCsvText.split('\n').filter(Boolean).length - 1} rows detected
+                </span>
+              )}
+            </div>
+          </form>
+
+          {bulkResult && (
+            <div style={{ marginTop: '18px', padding: '14px', borderRadius: '8px', background: bulkResult.errors.length === 0 ? '#064e3b33' : '#7f1d1d33', border: `1px solid ${bulkResult.errors.length === 0 ? '#10b981' : '#ef4444'}` }}>
+              <div style={{ fontWeight: 'bold', color: bulkResult.errors.length === 0 ? '#10b981' : '#f87171' }}>
+                Import Summary: {bulkResult.importedCount} of {bulkResult.totalRows} laptops imported successfully.
+              </div>
+              {bulkResult.errors.length > 0 && (
+                <div style={{ marginTop: '8px', fontSize: '12px', color: '#fca5a5' }}>
+                  <div style={{ fontWeight: 'bold' }}>Skipped / Errors:</div>
+                  <ul style={{ margin: '4px 0 0 18px', padding: 0 }}>
+                    {bulkResult.errors.map((err, idx) => (
+                      <li key={idx}>Row {err.row} ({err.serial}): {err.error}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       {createOpen && canManage && (
         <section className="panel intake-composer">

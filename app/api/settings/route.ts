@@ -27,6 +27,15 @@ export async function PATCH(request: Request) {
       warrantyMonths: Number(payload.warrantyMonths),
       warrantyTerms: typeof payload.warrantyTerms === "string" ? payload.warrantyTerms : "",
       logoDataUrl: typeof payload.logoDataUrl === "string" ? payload.logoDataUrl : "",
+      currencyCode: typeof payload.currencyCode === "string" ? payload.currencyCode : undefined,
+      currencySymbol: typeof payload.currencySymbol === "string" ? payload.currencySymbol : undefined,
+      currencyPosition: typeof payload.currencyPosition === "string" ? payload.currencyPosition : undefined,
+      dateFormat: typeof payload.dateFormat === "string" ? payload.dateFormat : undefined,
+      taxMode: typeof payload.taxMode === "string" ? payload.taxMode : undefined,
+      defaultShippingCarrier: typeof payload.defaultShippingCarrier === "string" ? payload.defaultShippingCarrier : undefined,
+      taxId: typeof payload.taxId === "string" ? payload.taxId : undefined,
+      taxRatePercent: typeof payload.taxRatePercent !== "undefined" ? Number(payload.taxRatePercent) : undefined,
+      taxInclusive: typeof payload.taxInclusive !== "undefined" ? Boolean(payload.taxInclusive) : undefined,
     }, session.email);
     return NextResponse.json({ settings });
   } catch (error) {

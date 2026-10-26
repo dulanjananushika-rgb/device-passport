@@ -219,7 +219,7 @@ function csvCell(value: string | number) {
 }
 
 export function financeAnalyticsCsv(analytics = getFinanceAnalytics()) {
-  const headers = ["Passport ID", "Device", "Model", "Serial", "Lifecycle", "Sold date", "Purchase cost (LKR)", "Refurbishment cost (LKR)", "Sale price (LKR)", "Warranty cost (LKR)", "Gross profit (LKR)"];
+  const headers = ["Passport ID", "Device", "Model", "Serial", "Lifecycle", "Sold date", "Purchase cost", "Refurbishment cost", "Sale price", "Warranty cost", "Gross profit"];
   const rows = analytics.devices.map((device) => [
     device.deviceId,
     device.deviceName,

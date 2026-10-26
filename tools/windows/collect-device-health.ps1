@@ -1,12 +1,17 @@
 <#
-  DevicePassport Windows Collector (Tester V2)
-  Reads hardware health data using built-in Windows interfaces and creates a
-  JSON report that can be imported into the DevicePassport web dashboard.
-
-  Usage:
-    powershell -ExecutionPolicy Bypass -File .\collect-device-health.ps1
-    powershell -ExecutionPolicy Bypass -File .\collect-device-health.ps1 -OutputPath C:\Reports\device.json
-    powershell -ExecutionPolicy Bypass -File .\collect-device-health.ps1 -StressSeconds 20
+  DevicePassport Universal Windows Hardware Collector (Tester V2.5)
+  Compatible with all PC Laptop & Desktop brands: Dell, Lenovo, HP, Asus, Acer, Surface, MSI.
+  
+  Features:
+  - Resilient Battery Health & Multi-Battery detection (e.g. ThinkPad / Surface dual batteries)
+  - powercfg XML fallback for non-elevated Windows 11 accounts
+  - Desktop / Workstation AC power detection
+  - Dedicated & Integrated GPU detection (NVIDIA GeForce, AMD Radeon, Intel Iris/UHD)
+  - Display Resolution & Refresh Rate
+  - Motherboard RAM slots, used count, free upgradeable slots, and speed
+  - SSD / NVMe / RAID storage reliability and SMART status
+  - Wi-Fi & Bluetooth adapter identification
+  - Non-BOM standard UTF-8 JSON output conforming to DevicePassport schema
 #>
 
 [CmdletBinding()]
@@ -15,7 +20,7 @@ param(
     [ValidateRange(0, 60)][int]$StressSeconds = 10
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "SilentlyContinue"
 
 function Get-SafeCimInstance {
     param(
@@ -74,34 +79,106 @@ function Get-CpuLoadPercent {
     return $null
 }
 
+# 1. Base Computer & OS Identity
 $computer = Get-SafeCimInstance -ClassName "Win32_ComputerSystem" | Select-Object -First 1
 $bios = Get-SafeCimInstance -ClassName "Win32_BIOS" | Select-Object -First 1
 $processor = Get-SafeCimInstance -ClassName "Win32_Processor" | Select-Object -First 1
 $operatingSystem = Get-SafeCimInstance -ClassName "Win32_OperatingSystem" | Select-Object -First 1
-$physicalMemory = Get-SafeCimInstance -ClassName "Win32_PhysicalMemory"
-$disks = Get-SafeCimInstance -ClassName "Win32_DiskDrive"
+$physicalMemory = @(Get-SafeCimInstance -ClassName "Win32_PhysicalMemory")
+$disks = @(Get-SafeCimInstance -ClassName "Win32_DiskDrive")
 $physicalDisks = @()
 try { $physicalDisks = @(Get-PhysicalDisk -ErrorAction Stop) } catch { $physicalDisks = @() }
 $systemRegistry = Get-SafeRegistryProperties -Path "HKLM:\HARDWARE\DESCRIPTION\System\BIOS"
 $cpuRegistry = Get-SafeRegistryProperties -Path "HKLM:\HARDWARE\DESCRIPTION\System\CentralProcessor\0"
 
-$batteryStatic = Get-SafeCimInstance -Namespace "root/wmi" -ClassName "BatteryStaticData" | Select-Object -First 1
-$batteryFull = Get-SafeCimInstance -Namespace "root/wmi" -ClassName "BatteryFullChargedCapacity" | Select-Object -First 1
-$batteryCycle = Get-SafeCimInstance -Namespace "root/wmi" -ClassName "BatteryCycleCount" | Select-Object -First 1
-$batteryStatus = Get-SafeCimInstance -Namespace "root/wmi" -ClassName "BatteryStatus" | Select-Object -First 1
+# 2. Resilient Multi-Battery Detection & Fallback
+$batteryStaticList = @(Get-SafeCimInstance -Namespace "root/wmi" -ClassName "BatteryStaticData")
+$batteryFullList = @(Get-SafeCimInstance -Namespace "root/wmi" -ClassName "BatteryFullChargedCapacity")
+$batteryCycleList = @(Get-SafeCimInstance -Namespace "root/wmi" -ClassName "BatteryCycleCount")
+$batteryStatusList = @(Get-SafeCimInstance -Namespace "root/wmi" -ClassName "BatteryStatus")
 
-$designedCapacity = [double]($batteryStatic.DesignedCapacity)
-$fullChargeCapacity = [double]($batteryFull.FullChargedCapacity)
-$batteryHealth = $null
-if ($designedCapacity -gt 0 -and $fullChargeCapacity -gt 0) {
-    $batteryHealth = [math]::Min(100, [math]::Round(($fullChargeCapacity / $designedCapacity) * 100))
+$totalDesignCapacity = 0.0
+$totalFullCapacity = 0.0
+$batteryArray = @()
+$maxCycleCount = 0
+$isCharging = $false
+
+if ($batteryStaticList.Count -gt 0 -and $batteryFullList.Count -gt 0) {
+    for ($i = 0; $i -lt $batteryStaticList.Count; $i++) {
+        $des = [double]$batteryStaticList[$i].DesignedCapacity
+        $ful = if ($i -lt $batteryFullList.Count) { [double]$batteryFullList[$i].FullChargedCapacity } else { 0.0 }
+        $cyc = if ($i -lt $batteryCycleList.Count) { [int]$batteryCycleList[$i].CycleCount } else { 0 }
+        if ($des -gt 0) {
+            $totalDesignCapacity += $des
+            $totalFullCapacity += $ful
+            if ($cyc -gt $maxCycleCount) { $maxCycleCount = $cyc }
+            $h = if ($ful -gt 0) { [math]::Min(100, [math]::Round(($ful / $des) * 100)) } else { 0 }
+            $batteryArray += [ordered]@{
+                index = $i + 1
+                designCapacityMWh = $des
+                fullChargeCapacityMWh = $ful
+                healthPercent = $h
+                cycleCount = $cyc
+            }
+        }
+    }
 }
 
+if ($batteryStatusList.Count -gt 0) {
+    $isCharging = [bool]$batteryStatusList[0].Charging
+}
+
+# Resilient fallback via powercfg XML (bypasses restricted root/wmi in Windows 11 / Dell / Lenovo)
+if ($totalDesignCapacity -le 0 -or $totalFullCapacity -le 0) {
+    try {
+        $xmlTemp = Join-Path $env:TEMP ("dpreport_" + [guid]::NewGuid().ToString() + ".xml")
+        $p = Start-Process -FilePath "powercfg.exe" -ArgumentList ("/batteryreport", "/xml", "/output", "`"$xmlTemp`"") -NoNewWindow -Wait -PassThru
+        if (Test-Path -LiteralPath $xmlTemp) {
+            [xml]$xml = Get-Content -LiteralPath $xmlTemp -Raw
+            $batteries = @($xml.BatteryReport.Batteries.Battery)
+            if ($batteries.Count -gt 0) {
+                $totalDesignCapacity = 0.0
+                $totalFullCapacity = 0.0
+                $batteryArray = @()
+                $idx = 1
+                foreach ($b in $batteries) {
+                    $d = [double]$b.DesignCapacity
+                    $f = [double]$b.FullChargeCapacity
+                    $c = [int]$b.CycleCount
+                    if ($d -gt 0) {
+                        $totalDesignCapacity += $d
+                        $totalFullCapacity += $f
+                        if ($c -gt $maxCycleCount) { $maxCycleCount = $c }
+                        $h = if ($f -gt 0) { [math]::Min(100, [math]::Round(($f / $d) * 100)) } else { 0 }
+                        $batteryArray += [ordered]@{
+                            index = $idx
+                            designCapacityMWh = $d
+                            fullChargeCapacityMWh = $f
+                            healthPercent = $h
+                            cycleCount = $c
+                        }
+                        $idx++
+                    }
+                }
+            }
+        }
+    }
+    catch {}
+    finally {
+        if ($null -ne $xmlTemp -and (Test-Path -LiteralPath $xmlTemp)) { Remove-Item -LiteralPath $xmlTemp -Force -ErrorAction SilentlyContinue }
+    }
+}
+
+$hasBattery = ($totalDesignCapacity -gt 0 -or $totalFullCapacity -gt 0 -or $batteryArray.Count -gt 0)
+$combinedBatteryHealth = if ($hasBattery -and $totalDesignCapacity -gt 0 -and $totalFullCapacity -gt 0) {
+    [math]::Min(100, [math]::Round(($totalFullCapacity / $totalDesignCapacity) * 100))
+} else { $null }
+
+# 3. RAM Modules & Motherboard Expansion Slots
 $memoryBytes = 0
 foreach ($module in $physicalMemory) {
     $memoryBytes += [double]$module.Capacity
 }
-
 $memoryAvailableGB = if ($null -ne $operatingSystem -and $operatingSystem.FreePhysicalMemory) {
     [math]::Round(([double]$operatingSystem.FreePhysicalMemory * 1KB) / 1GB, 1)
 } else { $null }
@@ -109,6 +186,17 @@ $memoryUsedPercent = if ($memoryBytes -gt 0 -and $null -ne $memoryAvailableGB) {
     [math]::Max(0, [math]::Min(100, [math]::Round((1 - (($memoryAvailableGB * 1GB) / $memoryBytes)) * 100, 1)))
 } else { $null }
 
+$memArray = Get-SafeCimInstance -ClassName "Win32_PhysicalMemoryArray" | Select-Object -First 1
+$totalRamSlots = if ($null -ne $memArray -and $memArray.MemoryDevices) { [int]$memArray.MemoryDevices } else { $physicalMemory.Count }
+$usedRamSlots = $physicalMemory.Count
+$freeRamSlots = [math]::Max(0, $totalRamSlots - $usedRamSlots)
+$ramSpeed = if ($physicalMemory.Count -gt 0 -and $physicalMemory[0].ConfiguredClockSpeed) {
+    [int]$physicalMemory[0].ConfiguredClockSpeed
+} elseif ($physicalMemory.Count -gt 0 -and $physicalMemory[0].Speed) {
+    [int]$physicalMemory[0].Speed
+} else { $null }
+
+# 4. Storage Drives with SMART Telemetry
 $diskReports = @()
 foreach ($disk in $disks) {
     $matchingPhysicalDisk = $physicalDisks | Where-Object {
@@ -119,13 +207,32 @@ foreach ($disk in $disks) {
     if ($null -ne $matchingPhysicalDisk) {
         try { $reliability = $matchingPhysicalDisk | Get-StorageReliabilityCounter -ErrorAction Stop } catch { $reliability = $null }
     }
+    $resolvedMediaType = if ($null -ne $matchingPhysicalDisk -and -not [string]::IsNullOrWhiteSpace($matchingPhysicalDisk.MediaType) -and $matchingPhysicalDisk.MediaType -ne "Unspecified") {
+        [string]$matchingPhysicalDisk.MediaType
+    } elseif (-not [string]::IsNullOrWhiteSpace($disk.MediaType)) {
+        [string]$disk.MediaType
+    } else {
+        "Unknown"
+    }
+    $resolvedInterface = if ($null -ne $matchingPhysicalDisk -and -not [string]::IsNullOrWhiteSpace($matchingPhysicalDisk.BusType)) {
+        [string]$matchingPhysicalDisk.BusType
+    } else {
+        [string]$disk.InterfaceType
+    }
+    $resolvedHealth = if ($null -ne $matchingPhysicalDisk -and -not [string]::IsNullOrWhiteSpace($matchingPhysicalDisk.HealthStatus)) {
+        [string]$matchingPhysicalDisk.HealthStatus
+    } elseif ([string]::IsNullOrWhiteSpace([string]$disk.Status)) {
+        "Unknown"
+    } else {
+        [string]$disk.Status
+    }
     $diskReports += [ordered]@{
         model        = [string]$disk.Model
         serialNumber = ([string]$disk.SerialNumber).Trim()
-        interface    = [string]$disk.InterfaceType
-        mediaType    = [string]$disk.MediaType
+        interface    = $resolvedInterface
+        mediaType    = $resolvedMediaType
         sizeGB       = Convert-BytesToGB -Bytes ([double]$disk.Size)
-        healthStatus = if ([string]::IsNullOrWhiteSpace([string]$disk.Status)) { "Unknown" } else { [string]$disk.Status }
+        healthStatus = $resolvedHealth
         powerOnHours  = if ($null -ne $reliability -and $null -ne $reliability.PowerOnHours) { [long]$reliability.PowerOnHours } else { $null }
         temperatureC = if ($null -ne $reliability -and $null -ne $reliability.Temperature) { [double]$reliability.Temperature } else { $null }
         wearPercent   = if ($null -ne $reliability -and $null -ne $reliability.Wear) { [double]$reliability.Wear } else { $null }
@@ -152,11 +259,37 @@ if ($diskReports.Count -eq 0) {
             }
         }
     }
-    catch {
-        # Some restricted Windows accounts cannot query the Storage subsystem.
+    catch {}
+}
+
+# 5. Dedicated & Integrated GPUs & Display
+$videoControllers = @(Get-SafeCimInstance -ClassName "Win32_VideoController")
+$gpus = @()
+$primaryResolution = $null
+foreach ($gpu in $videoControllers) {
+    $gpuName = [string]$gpu.Name
+    if ([string]::IsNullOrWhiteSpace($gpuName) -or $gpuName -match "Remote|Virtual|Mirror|VNC|Citrix|TeamViewer") { continue }
+    $vramBytes = [double]$gpu.AdapterRAM
+    $vramGB = if ($vramBytes -gt 0) { [math]::Round($vramBytes / 1GB, 1) } else { $null }
+    $res = if ($gpu.CurrentHorizontalResolution -gt 0) { ("{0}x{1} @ {2}Hz" -f $gpu.CurrentHorizontalResolution, $gpu.CurrentVerticalResolution, $gpu.CurrentRefreshRate) } else { $null }
+    if ($null -ne $res -and $null -eq $primaryResolution) { $primaryResolution = $res }
+    $gpus += [ordered]@{
+        name          = $gpuName
+        vramGB        = $vramGB
+        driverVersion = [string]$gpu.DriverVersion
+        resolution    = $res
     }
 }
 
+# 6. Wireless & Network Hardware
+$wifiAdapter = Get-SafeCimInstance -ClassName "Win32_NetworkAdapter" |
+    Where-Object { $_.Name -like "*Wireless*" -or $_.Name -like "*Wi-Fi*" -or $_.Name -like "*802.11*" } |
+    Select-Object -First 1
+$bluetoothAdapter = Get-SafeCimInstance -ClassName "Win32_NetworkAdapter" |
+    Where-Object { $_.Name -like "*Bluetooth*" } |
+    Select-Object -First 1
+
+# 7. CPU Stress Test & Thermals
 $cpuLoadBefore = Get-CpuLoadPercent
 $cpuTemperatureBefore = Get-CpuTemperatureC
 $stress = [ordered]@{
@@ -249,30 +382,44 @@ if ([string]::IsNullOrWhiteSpace($processorName)) {
     $processorName = [string]$cpuRegistry.ProcessorNameString
 }
 
+$primaryGpuName = if ($gpus.Count -gt 0) { $gpus[0].name } else { "Generic Display Adapter" }
+
 $report = [ordered]@{
-    reportVersion = "2.0"
+    reportVersion = "2.5"
     collectedAt   = (Get-Date).ToUniversalTime().ToString("o")
     collector     = [ordered]@{
-        name     = "DevicePassport Windows Collector"
-        version  = "0.2.0"
+        name     = "DevicePassport Universal Windows Collector"
+        version  = "2.5.0"
         hostname = $env:COMPUTERNAME
     }
     device        = [ordered]@{
-        manufacturer = $manufacturer
-        model        = $model
-        serialNumber = $serialNumber
-        processor    = $processorName
-        memoryGB     = Convert-BytesToGB -Bytes $memoryBytes
-        biosVersion  = (@($bios.SMBIOSBIOSVersion) -join ", ")
-        operatingSystem = [string]$operatingSystem.Caption
+        manufacturer       = $manufacturer
+        model              = $model
+        serialNumber       = $serialNumber
+        processor          = $processorName
+        gpu                = $primaryGpuName
+        gpus               = $gpus
+        displayResolution  = $primaryResolution
+        memoryGB           = Convert-BytesToGB -Bytes $memoryBytes
+        ramSlotsTotal      = $totalRamSlots
+        ramSlotsUsed       = $usedRamSlots
+        ramSlotsFree       = $freeRamSlots
+        ramSpeedMT         = $ramSpeed
+        biosVersion        = (@($bios.SMBIOSBIOSVersion) -join ", ")
+        operatingSystem    = [string]$operatingSystem.Caption
+        wifiAdapter        = if ($null -ne $wifiAdapter) { [string]$wifiAdapter.Name } else { $null }
+        bluetoothPresent   = ($null -ne $bluetoothAdapter)
+        isDesktop          = (-not $hasBattery)
     }
     battery       = [ordered]@{
-        present            = ($null -ne $batteryStatic -or $null -ne $batteryStatus)
-        designedCapacityMWh = if ($designedCapacity -gt 0) { $designedCapacity } else { $null }
-        fullChargeCapacityMWh = if ($fullChargeCapacity -gt 0) { $fullChargeCapacity } else { $null }
-        healthPercent      = $batteryHealth
-        cycleCount         = if ($null -ne $batteryCycle) { [int]$batteryCycle.CycleCount } else { $null }
-        charging           = if ($null -ne $batteryStatus) { [bool]$batteryStatus.Charging } else { $null }
+        present             = $hasBattery
+        designedCapacityMWh  = if ($totalDesignCapacity -gt 0) { $totalDesignCapacity } else { $null }
+        fullChargeCapacityMWh= if ($totalFullCapacity -gt 0) { $totalFullCapacity } else { $null }
+        healthPercent       = $combinedBatteryHealth
+        cycleCount          = if ($maxCycleCount -gt 0) { $maxCycleCount } else { $null }
+        charging            = $isCharging
+        batteries           = $batteryArray
+        note                = if (-not $hasBattery) { "No battery detected (Desktop / AC Mains Power)" } else { $null }
     }
     storage       = $diskReports
     performance   = [ordered]@{
@@ -298,7 +445,7 @@ $report = [ordered]@{
     integrity     = [ordered]@{
         source = "local-windows-cim"
         signed = $false
-        note   = "Tester V2 report. Temperature and SMART fields remain null when Windows or the device firmware does not expose them. Report signing will be added before production use."
+        note   = "Tester V2.5 report. Temperature and SMART fields remain null when firmware restricts non-elevated queries. UTF-8 No-BOM standard."
     }
 }
 
@@ -307,6 +454,8 @@ if ([string]::IsNullOrWhiteSpace($OutputPath)) {
     $OutputPath = Join-Path -Path (Get-Location) -ChildPath ("device-report-{0}.json" -f $safeSerial)
 }
 
-$report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $OutputPath -Encoding UTF8
+$jsonContent = $report | ConvertTo-Json -Depth 8
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($OutputPath, $jsonContent, $utf8NoBom)
 Write-Host "DevicePassport report created:" -ForegroundColor Green
 Write-Host (Resolve-Path -LiteralPath $OutputPath)

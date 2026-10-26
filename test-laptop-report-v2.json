@@ -1,0 +1,75 @@
+﻿{
+    "reportVersion":  "2.0",
+    "collectedAt":  "2026-10-26T01:37:22.9718443Z",
+    "collector":  {
+                      "name":  "DevicePassport Windows Collector",
+                      "version":  "0.2.0",
+                      "hostname":  "DESKTOP-C302VTE"
+                  },
+    "device":  {
+                   "manufacturer":  "Dell Inc.",
+                   "model":  "Latitude 5490",
+                   "serialNumber":  "1FX6VN2",
+                   "processor":  "Intel(R) Core(TM) i7-8650U CPU @ 1.90GHz",
+                   "memoryGB":  16,
+                   "biosVersion":  "1.38.0",
+                   "operatingSystem":  "Microsoft Windows 11 Pro"
+               },
+    "battery":  {
+                    "present":  true,
+                    "designedCapacityMWh":  67997,
+                    "fullChargeCapacityMWh":  22268,
+                    "healthPercent":  33,
+                    "cycleCount":  0,
+                    "charging":  false
+                },
+    "storage":  [
+                    {
+                        "model":  "TOSHIBA THNSFK256GVN8",
+                        "serialNumber":  "67GS108ITHMT",
+                        "interface":  "RAID",
+                        "mediaType":  "SSD",
+                        "sizeGB":  238.5,
+                        "healthStatus":  "Healthy",
+                        "powerOnHours":  null,
+                        "temperatureC":  null,
+                        "wearPercent":  null,
+                        "smartSource":  "Unavailable"
+                    }
+                ],
+    "performance":  {
+                        "memory":  {
+                                       "availableGB":  5,
+                                       "usedPercent":  69
+                                   },
+                        "cpu":  {
+                                    "logicalProcessors":  8,
+                                    "loadPercentBeforeTest":  44,
+                                    "temperatureCBeforeTest":  null
+                                },
+                        "stressTest":  {
+                                           "executed":  true,
+                                           "durationSeconds":  5,
+                                           "passed":  true,
+                                           "averageLoadPercent":  34.7,
+                                           "peakTemperatureC":  null,
+                                           "sampleCount":  3,
+                                           "workerCount":  4,
+                                           "completedWorkers":  4,
+                                           "note":  "CPU load workers completed; this device did not expose a temperature sensor through Windows ACPI."
+                                       }
+                    },
+    "manualChecks":  {
+                         "display":  "Not checked",
+                         "keyboard":  "Not checked",
+                         "camera":  "Not checked",
+                         "audio":  "Not checked",
+                         "ports":  "Not checked",
+                         "wifiBluetooth":  "Not checked"
+                     },
+    "integrity":  {
+                      "source":  "local-windows-cim",
+                      "signed":  false,
+                      "note":  "Tester V2 report. Temperature and SMART fields remain null when Windows or the device firmware does not expose them. Report signing will be added before production use."
+                  }
+}

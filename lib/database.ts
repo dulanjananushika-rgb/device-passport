@@ -36,6 +36,14 @@ import {
 } from "./operations";
 import type { DeviceSale, SaleActivationInput } from "./sales";
 import { parseLkrToCents } from "./finance";
+import { applySaleCustomization } from "./pos-customization";
+import { ensureReservationSchema, fulfillReservation } from "./reservations";
+import { ensureReturnsSchema } from "./returns";
+import { ensureRmaSchema } from "./supplier-rma";
+import { ensureSequenceSchema } from "./whatsapp-sequences";
+import { ensureRepairsSchema } from "./repairs";
+import { ensurePettyCashSchema } from "./petty-cash";
+import { defaultWarrantyBreakdown, type WarrantyBreakdown } from "./sales";
 import { DEMO_EMAIL, DEMO_PASSWORD, DEMO_DEV_PASSWORD, isPortfolioDemo } from "./demo";
 import { seedPortfolioDemo } from "./demo-seed";
 
@@ -59,10 +67,27 @@ type DeviceRow = {
 
 type DeviceWithSaleRow = DeviceRow & {
   diagnostic_report_json: string | null;
+  active_reservation_id: string | null;
   sale_customer_name: string | null;
   sale_customer_email: string | null;
   sale_customer_phone: string | null;
   sale_invoice_reference: string | null;
+  sale_price_cents: number | null;
+  sale_payment_method: string | null;
+  sale_cash_received_cents: number | null;
+  sale_card_amount_cents: number | null;
+  sale_bank_transfer_cents: number | null;
+  sale_installment_cents: number | null;
+  sale_payment_reference: string | null;
+  sale_warranty_breakdown_json: string | null;
+  sale_bundled_accessories_json: string | null;
+  sale_delivery_method: string | null;
+  sale_courier_name: string | null;
+  sale_courier_waybill: string | null;
+  sale_courier_fee_cents: number | null;
+  sale_cod_settlement_status: string | null;
+  sale_discount_cents: number | null;
+  sale_discount_reason: string | null;
   sale_sold_at: string | null;
   sale_warranty_starts: string | null;
   sale_warranty_ends: string | null;
@@ -146,6 +171,7 @@ type StaffRow = {
 };
 
 type SettingsRow = {
+  id: number;
   shop_name: string;
   tagline: string;
   contact_email: string;
@@ -154,6 +180,16 @@ type SettingsRow = {
   warranty_months: number;
   warranty_terms: string;
   logo_data_url: string;
+  currency_code?: string;
+  currency_symbol?: string;
+  currency_position?: string;
+  date_format?: string;
+  tax_mode?: string;
+  default_shipping_carrier?: string;
+  tax_id?: string;
+  tax_rate_percent?: number;
+  tax_inclusive?: number;
+  updated_at: string;
 };
 
 type AuditRow = {
@@ -176,7 +212,11 @@ const globalDatabase = globalThis as typeof globalThis & { devicePassportDb?: Da
 export function getDatabaseFilePath() {
   const configured = process.env.DEVICEPASSPORT_DATABASE_PATH?.trim();
   if (configured === ":memory:") return configured;
-  return configured ? path.resolve(configured) : path.join(process.cwd(), ".data", "device-passport.db");
+  if (configured) return path.resolve(configured);
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    return path.join("/tmp", "device-passport.db");
+  }
+  return path.join(process.cwd(), ".data", "device-passport.db");
 }
 
 function ensureClaimSchema(database: DatabaseSync) {
@@ -296,10 +336,106 @@ function ensureOperationsSchema(database: DatabaseSync) {
     CREATE INDEX IF NOT EXISTS idx_device_sales_customer_phone ON device_sales(customer_phone);
     CREATE INDEX IF NOT EXISTS idx_device_sales_customer_email ON device_sales(customer_email);
     CREATE INDEX IF NOT EXISTS idx_device_sales_warranty_ends ON device_sales(warranty_ends);
+
+    CREATE TABLE IF NOT EXISTS organizations (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      logo_url TEXT,
+      currency TEXT NOT NULL DEFAULT 'LKR',
+      warranty_policy TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS branches (
+      id TEXT PRIMARY KEY,
+      organization_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      code TEXT NOT NULL,
+      is_warehouse INTEGER NOT NULL DEFAULT 0,
+      address TEXT,
+      phone TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+    );
   `);
+
+  const orgCount = (database.prepare("SELECT COUNT(*) AS count FROM organizations").get() as { count: number } | undefined)?.count ?? 0;
+  if (orgCount === 0) {
+    const seedNow = new Date().toISOString();
+    database.prepare(`
+      INSERT OR IGNORE INTO organizations (id, name, slug, logo_url, currency, warranty_policy, created_at)
+      VALUES ('default_org', 'Lapmart Computer Systems', 'lapmart', '/branding/lapmart-logo.png', 'LKR', 'Standard 1-Year Limited Hardware Warranty', ?)
+    `).run(seedNow);
+    database.prepare(`
+      INSERT OR IGNORE INTO branches (id, organization_id, name, code, is_warehouse, address, phone, created_at)
+      VALUES ('default_branch', 'default_org', 'Main Workshop & Refurbishment Center', 'HQ-01', 1, 'No. 124, High Level Road, Colombo', '+94 11 234 5678', ?)
+    `).run(seedNow);
+  }
 
   const saleColumns = new Set((database.prepare("PRAGMA table_info(device_sales)").all() as Array<{ name: string }>).map((column) => column.name));
   if (!saleColumns.has("sale_price_cents")) database.exec("ALTER TABLE device_sales ADD COLUMN sale_price_cents INTEGER NOT NULL DEFAULT 0");
+  if (!saleColumns.has("payment_method")) database.exec("ALTER TABLE device_sales ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'Cash'");
+  if (!saleColumns.has("cash_received_cents")) database.exec("ALTER TABLE device_sales ADD COLUMN cash_received_cents INTEGER NOT NULL DEFAULT 0");
+  if (!saleColumns.has("card_amount_cents")) database.exec("ALTER TABLE device_sales ADD COLUMN card_amount_cents INTEGER NOT NULL DEFAULT 0");
+  if (!saleColumns.has("bank_transfer_cents")) database.exec("ALTER TABLE device_sales ADD COLUMN bank_transfer_cents INTEGER NOT NULL DEFAULT 0");
+  if (!saleColumns.has("installment_cents")) database.exec("ALTER TABLE device_sales ADD COLUMN installment_cents INTEGER NOT NULL DEFAULT 0");
+  if (!saleColumns.has("payment_reference")) database.exec("ALTER TABLE device_sales ADD COLUMN payment_reference TEXT NOT NULL DEFAULT ''");
+
+  if (!saleColumns.has("warranty_breakdown_json")) database.exec("ALTER TABLE device_sales ADD COLUMN warranty_breakdown_json TEXT NOT NULL DEFAULT '{}'");
+
+  if (!saleColumns.has("bundled_accessories_json")) database.exec("ALTER TABLE device_sales ADD COLUMN bundled_accessories_json TEXT NOT NULL DEFAULT '[]'");
+
+  if (!saleColumns.has("delivery_method")) database.exec("ALTER TABLE device_sales ADD COLUMN delivery_method TEXT NOT NULL DEFAULT 'In-Store Pickup'");
+
+  if (!saleColumns.has("courier_name")) database.exec("ALTER TABLE device_sales ADD COLUMN courier_name TEXT NOT NULL DEFAULT ''");
+
+  if (!saleColumns.has("courier_waybill")) database.exec("ALTER TABLE device_sales ADD COLUMN courier_waybill TEXT NOT NULL DEFAULT ''");
+
+  if (!saleColumns.has("courier_fee_cents")) database.exec("ALTER TABLE device_sales ADD COLUMN courier_fee_cents INTEGER NOT NULL DEFAULT 0");
+
+  if (!saleColumns.has("cod_settlement_status")) database.exec("ALTER TABLE device_sales ADD COLUMN cod_settlement_status TEXT NOT NULL DEFAULT 'Not Applicable'");
+
+  if (!saleColumns.has("discount_cents")) database.exec("ALTER TABLE device_sales ADD COLUMN discount_cents INTEGER NOT NULL DEFAULT 0");
+
+  if (!saleColumns.has("discount_reason")) database.exec("ALTER TABLE device_sales ADD COLUMN discount_reason TEXT NOT NULL DEFAULT ''");
+
+  const settingsColumns = new Set((database.prepare("PRAGMA table_info(shop_settings)").all() as Array<{ name: string }>).map((column) => column.name));
+
+  if (!settingsColumns.has("currency_code")) database.exec("ALTER TABLE shop_settings ADD COLUMN currency_code TEXT NOT NULL DEFAULT 'USD'");
+
+  if (!settingsColumns.has("currency_symbol")) database.exec("ALTER TABLE shop_settings ADD COLUMN currency_symbol TEXT NOT NULL DEFAULT '$'");
+
+  if (!settingsColumns.has("currency_position")) database.exec("ALTER TABLE shop_settings ADD COLUMN currency_position TEXT NOT NULL DEFAULT 'prefix'");
+
+  if (!settingsColumns.has("date_format")) database.exec("ALTER TABLE shop_settings ADD COLUMN date_format TEXT NOT NULL DEFAULT 'MM/DD/YYYY'");
+
+  if (!settingsColumns.has("tax_mode")) database.exec("ALTER TABLE shop_settings ADD COLUMN tax_mode TEXT NOT NULL DEFAULT 'standard'");
+
+  if (!settingsColumns.has("default_shipping_carrier")) database.exec("ALTER TABLE shop_settings ADD COLUMN default_shipping_carrier TEXT NOT NULL DEFAULT 'FedEx'");
+
+  if (!settingsColumns.has("tax_id")) database.exec("ALTER TABLE shop_settings ADD COLUMN tax_id TEXT NOT NULL DEFAULT ''");
+
+  if (!settingsColumns.has("tax_rate_percent")) database.exec("ALTER TABLE shop_settings ADD COLUMN tax_rate_percent REAL NOT NULL DEFAULT 0");
+
+  if (!settingsColumns.has("tax_inclusive")) database.exec("ALTER TABLE shop_settings ADD COLUMN tax_inclusive INTEGER NOT NULL DEFAULT 1");
+
+  const deviceColumns = new Set((database.prepare("PRAGMA table_info(devices)").all() as Array<{ name: string }>).map((column) => column.name));
+  if (!deviceColumns.has("keyboard_layout")) database.exec("ALTER TABLE devices ADD COLUMN keyboard_layout TEXT NOT NULL DEFAULT 'US QWERTY'");
+  if (!deviceColumns.has("power_adapter_type")) database.exec("ALTER TABLE devices ADD COLUMN power_adapter_type TEXT NOT NULL DEFAULT 'Type A/B (US 110V/240V)'");
+  if (!deviceColumns.has("cosmetic_grade_standard")) database.exec("ALTER TABLE devices ADD COLUMN cosmetic_grade_standard TEXT NOT NULL DEFAULT 'R2v3 / SERI Certified'");
+
+  if (!saleColumns.has("tracking_url")) database.exec("ALTER TABLE device_sales ADD COLUMN tracking_url TEXT NOT NULL DEFAULT ''");
+
+  ensureReservationSchema(database);
+
+  ensureReturnsSchema(database);
+
+  ensureSequenceSchema(database);
+
+  ensureRepairsSchema(database);
+
+  ensurePettyCashSchema(database);
 
   const now = new Date().toISOString();
   database.prepare(`
@@ -335,9 +471,137 @@ function ensureFinanceSchema(database: DatabaseSync) {
     );
     CREATE INDEX IF NOT EXISTS idx_device_finance_updated ON device_finance(updated_at);
   `);
+
+  const financeCols = new Set((database.prepare("PRAGMA table_info(device_finance)").all() as Array<{ name: string }>).map((c) => c.name));
+  if (!financeCols.has("parts_cost_cents")) database.exec("ALTER TABLE device_finance ADD COLUMN parts_cost_cents INTEGER NOT NULL DEFAULT 0");
+  if (!financeCols.has("repair_cost_cents")) database.exec("ALTER TABLE device_finance ADD COLUMN repair_cost_cents INTEGER NOT NULL DEFAULT 0");
+}
+
+function ensureCustomerAndSecuritySchema(database: DatabaseSync) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS device_security_seals (
+      id TEXT PRIMARY KEY,
+      device_id TEXT NOT NULL,
+      serial TEXT NOT NULL,
+      seal_number TEXT NOT NULL UNIQUE,
+      placement_location TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'Intact',
+      applied_by TEXT NOT NULL,
+      applied_at TEXT NOT NULL,
+      verified_by TEXT,
+      verified_at TEXT,
+      notes TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_seals_device ON device_security_seals(device_id);
+    CREATE INDEX IF NOT EXISTS idx_seals_serial ON device_security_seals(serial);
+    CREATE INDEX IF NOT EXISTS idx_seals_number ON device_security_seals(seal_number);
+
+    CREATE TABLE IF NOT EXISTS customer_otps (
+      id TEXT PRIMARY KEY,
+      phone_normalized TEXT NOT NULL,
+      otp_code TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      consumed INTEGER NOT NULL DEFAULT 0,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_customer_otps_phone ON customer_otps(phone_normalized, consumed);
+
+    CREATE TABLE IF NOT EXISTS customer_sessions (
+      id TEXT PRIMARY KEY,
+      phone_normalized TEXT NOT NULL,
+      customer_name TEXT,
+      session_token TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_customer_sessions_token ON customer_sessions(session_token);
+
+    CREATE TABLE IF NOT EXISTS trade_in_evaluations (
+      id TEXT PRIMARY KEY,
+      organization_id TEXT NOT NULL DEFAULT 'default_org',
+      branch_id TEXT NOT NULL DEFAULT 'default_branch',
+      customer_name TEXT NOT NULL,
+      customer_phone TEXT NOT NULL,
+      brand TEXT NOT NULL,
+      model TEXT NOT NULL,
+      serial TEXT NOT NULL,
+      specs_summary TEXT NOT NULL,
+      grade TEXT NOT NULL,
+      estimated_market_value_cents INTEGER NOT NULL,
+      estimated_refurbishment_cost_cents INTEGER NOT NULL,
+      offered_trade_in_value_cents INTEGER NOT NULL,
+      accepted_for_device_id TEXT,
+      evaluated_by TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'Quoted',
+      created_at TEXT NOT NULL,
+      customer_nic_passport TEXT NOT NULL DEFAULT '',
+      legal_declaration_signed INTEGER NOT NULL DEFAULT 0,
+      legal_notes TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_trade_in_phone ON trade_in_evaluations(customer_phone);
+  `);
+  const tradeInCols = new Set((database.prepare("PRAGMA table_info(trade_in_evaluations)").all() as Array<{ name: string }>).map((col) => col.name));
+  if (!tradeInCols.has("customer_nic_passport")) database.exec("ALTER TABLE trade_in_evaluations ADD COLUMN customer_nic_passport TEXT NOT NULL DEFAULT ''");
+  if (!tradeInCols.has("legal_declaration_signed")) database.exec("ALTER TABLE trade_in_evaluations ADD COLUMN legal_declaration_signed INTEGER NOT NULL DEFAULT 0");
+  if (!tradeInCols.has("legal_notes")) database.exec("ALTER TABLE trade_in_evaluations ADD COLUMN legal_notes TEXT NOT NULL DEFAULT ''");
+}
+
+function ensureInventorySchema(database: DatabaseSync) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS spare_parts (
+      id TEXT PRIMARY KEY,
+      organization_id TEXT NOT NULL DEFAULT 'default_org',
+      branch_id TEXT NOT NULL DEFAULT 'default_branch',
+      sku TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      specifications TEXT NOT NULL DEFAULT '',
+      unit_cost_cents INTEGER NOT NULL DEFAULT 0,
+      quantity INTEGER NOT NULL DEFAULT 0,
+      min_alert_quantity INTEGER NOT NULL DEFAULT 2,
+      supplier_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS task_part_allocations (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      intake_id TEXT NOT NULL,
+      spare_part_id TEXT NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      unit_cost_cents INTEGER NOT NULL DEFAULT 0,
+      total_cost_cents INTEGER NOT NULL DEFAULT 0,
+      allocated_by TEXT NOT NULL,
+      allocated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS stock_transfers (
+      id TEXT PRIMARY KEY,
+      organization_id TEXT NOT NULL DEFAULT 'default_org',
+      tracking_number TEXT NOT NULL UNIQUE,
+      from_branch_id TEXT NOT NULL,
+      to_branch_id TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      status TEXT NOT NULL DEFAULT 'Dispatched',
+      dispatched_by TEXT NOT NULL,
+      dispatched_at TEXT NOT NULL,
+      received_by TEXT,
+      received_at TEXT,
+      notes TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_spare_parts_category ON spare_parts(category);
+    CREATE INDEX IF NOT EXISTS idx_spare_parts_branch ON spare_parts(branch_id);
+    CREATE INDEX IF NOT EXISTS idx_task_parts_intake ON task_part_allocations(intake_id);
+    CREATE INDEX IF NOT EXISTS idx_transfers_tracking ON stock_transfers(tracking_number);
+  `);
 }
 
 function ensureProcurementSchema(database: DatabaseSync) {
+  ensureRmaSchema(database);
   database.exec(`
     CREATE TABLE IF NOT EXISTS suppliers (
       id TEXT PRIMARY KEY,
@@ -387,6 +651,14 @@ function ensureProcurementSchema(database: DatabaseSync) {
     CREATE INDEX IF NOT EXISTS idx_stock_intakes_device ON stock_intakes(device_id);
     CREATE INDEX IF NOT EXISTS idx_refurbishment_tasks_intake ON refurbishment_tasks(intake_id, completed);
   `);
+
+  const intakeCols = new Set((database.prepare("PRAGMA table_info(stock_intakes)").all() as Array<{ name: string }>).map((c) => c.name));
+  if (!intakeCols.has("organization_id")) database.exec("ALTER TABLE stock_intakes ADD COLUMN organization_id TEXT NOT NULL DEFAULT 'default_org'");
+  if (!intakeCols.has("branch_id")) database.exec("ALTER TABLE stock_intakes ADD COLUMN branch_id TEXT NOT NULL DEFAULT 'default_branch'");
+
+  const devCols = new Set((database.prepare("PRAGMA table_info(devices)").all() as Array<{ name: string }>).map((c) => c.name));
+  if (!devCols.has("organization_id")) database.exec("ALTER TABLE devices ADD COLUMN organization_id TEXT NOT NULL DEFAULT 'default_org'");
+  if (!devCols.has("branch_id")) database.exec("ALTER TABLE devices ADD COLUMN branch_id TEXT NOT NULL DEFAULT 'default_branch'");
 }
 
 function ensureTesterSchema(database: DatabaseSync) {
@@ -495,6 +767,8 @@ export function getDatabase() {
     ensureClaimSchema(globalDatabase.devicePassportDb);
     ensureOperationsSchema(globalDatabase.devicePassportDb);
     ensureFinanceSchema(globalDatabase.devicePassportDb);
+    ensureCustomerAndSecuritySchema(globalDatabase.devicePassportDb);
+    ensureInventorySchema(globalDatabase.devicePassportDb);
     ensureProcurementSchema(globalDatabase.devicePassportDb);
     ensureTesterSchema(globalDatabase.devicePassportDb);
     backfillExistingSales(globalDatabase.devicePassportDb);
@@ -506,7 +780,7 @@ export function getDatabase() {
   const filePath = getDatabaseFilePath();
   mkdirSync(path.dirname(filePath), { recursive: true });
   const database = new DatabaseSync(filePath);
-  database.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
+  database.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
   database.exec(`
     CREATE TABLE IF NOT EXISTS devices (
       id TEXT PRIMARY KEY,
@@ -558,6 +832,8 @@ export function getDatabase() {
   ensureClaimSchema(database);
   ensureOperationsSchema(database);
   ensureFinanceSchema(database);
+  ensureCustomerAndSecuritySchema(database);
+  ensureInventorySchema(database);
   ensureProcurementSchema(database);
   ensureTesterSchema(database);
 
@@ -667,6 +943,13 @@ function rowToDevice(row: DeviceWithSaleRow): DeviceRecord {
     customerEmail: row.sale_customer_email ?? "",
     customerPhone: row.sale_customer_phone ?? "",
     invoiceReference: row.sale_invoice_reference ?? "",
+    salePriceCents: row.sale_price_cents ?? 0,
+    paymentMethod: (row.sale_payment_method as any) || "Cash",
+    cashReceivedCents: row.sale_cash_received_cents ?? 0,
+    cardAmountCents: row.sale_card_amount_cents ?? 0,
+    bankTransferCents: row.sale_bank_transfer_cents ?? 0,
+    installmentCents: row.sale_installment_cents ?? 0,
+    paymentReference: row.sale_payment_reference ?? "",
     soldAt: row.sale_sold_at ?? "",
     warrantyStarts: row.sale_warranty_starts ?? "",
     warrantyEnds: row.sale_warranty_ends ?? "",
@@ -690,7 +973,7 @@ function rowToDevice(row: DeviceWithSaleRow): DeviceRecord {
     technician: row.technician,
     warrantyEnds: row.warranty_ends,
     status: row.status,
-    lifecycleStatus: sale ? "Sold" : row.status === "Published" ? "Ready" : "Draft",
+    lifecycleStatus: sale ? "Sold" : row.active_reservation_id ? "Reserved" : row.status === "Published" ? "Ready" : "Draft",
     sale,
     diagnostics: extractDeviceDiagnostics(diagnosticReport),
   };
@@ -718,6 +1001,15 @@ function rowToSettings(row: SettingsRow): ShopSettings {
     warrantyMonths: row.warranty_months,
     warrantyTerms: row.warranty_terms,
     logoDataUrl: row.logo_data_url,
+    currencyCode: row.currency_code || "USD",
+    currencySymbol: row.currency_symbol || "$",
+    currencyPosition: (row.currency_position as any) || "prefix",
+    dateFormat: (row.date_format as any) || "MM/DD/YYYY",
+    taxMode: (row.tax_mode as any) || "standard",
+    defaultShippingCarrier: row.default_shipping_carrier || "FedEx",
+    taxId: row.tax_id || "",
+    taxRatePercent: typeof row.tax_rate_percent === "number" ? row.tax_rate_percent : 0,
+    taxInclusive: row.tax_inclusive !== undefined ? Boolean(row.tax_inclusive) : true,
   };
 }
 
@@ -745,11 +1037,24 @@ export function updateShopSettings(settings: ShopSettings, actor: string): ShopS
   if (!Number.isInteger(warrantyMonths) || warrantyMonths < 1 || warrantyMonths > 36) throw new Error("Warranty duration must be between 1 and 36 months.");
   if (!warrantyTerms || warrantyTerms.length > 1200) throw new Error("Warranty terms are required and must be 1200 characters or fewer.");
 
+  const currencyCode = (settings.currencyCode || "USD").trim().toUpperCase();
+  const currencySymbol = (settings.currencySymbol || "$").trim();
+  const currencyPosition = settings.currencyPosition === "suffix" ? "suffix" : "prefix";
+  const dateFormat = settings.dateFormat === "DD/MM/YYYY" ? "DD/MM/YYYY" : settings.dateFormat === "YYYY-MM-DD" ? "YYYY-MM-DD" : "MM/DD/YYYY";
+  const taxMode = settings.taxMode === "us_sales_tax" || settings.taxMode === "uk_eu_margin_scheme" ? settings.taxMode : "standard";
+  const defaultShippingCarrier = (settings.defaultShippingCarrier || "FedEx").trim();
+  const taxId = (settings.taxId || "").trim();
+  const taxRatePercent = Math.max(0, Math.min(100, Number(settings.taxRatePercent || 0)));
+  const taxInclusive = settings.taxInclusive !== false ? 1 : 0;
+
   const database = getDatabase();
   database.prepare(`
     UPDATE shop_settings SET shop_name = ?, tagline = ?, contact_email = ?, phone = ?, address = ?,
-      warranty_months = ?, warranty_terms = ?, logo_data_url = ?, updated_at = ? WHERE id = 1
-  `).run(shopName, tagline, contactEmail, phone, address, warrantyMonths, warrantyTerms, logoDataUrl, new Date().toISOString());
+      warranty_months = ?, warranty_terms = ?, logo_data_url = ?,
+      currency_code = ?, currency_symbol = ?, currency_position = ?, date_format = ?, tax_mode = ?, default_shipping_carrier = ?,
+      tax_id = ?, tax_rate_percent = ?, tax_inclusive = ?,
+      updated_at = ? WHERE id = 1
+  `).run(shopName, tagline, contactEmail, phone, address, warrantyMonths, warrantyTerms, logoDataUrl, currencyCode, currencySymbol, currencyPosition, dateFormat, taxMode, defaultShippingCarrier, taxId, taxRatePercent, taxInclusive, new Date().toISOString());
   recordAuditEvent(actor, "settings.updated", `Updated branding and warranty settings for ${shopName}.`);
   return readShopSettings(database);
 }
@@ -892,6 +1197,13 @@ const deviceSelectSql = `
     s.customer_email AS sale_customer_email,
     s.customer_phone AS sale_customer_phone,
     s.invoice_reference AS sale_invoice_reference,
+    s.sale_price_cents AS sale_price_cents,
+    s.payment_method AS sale_payment_method,
+    s.cash_received_cents AS sale_cash_received_cents,
+    s.card_amount_cents AS sale_card_amount_cents,
+    s.bank_transfer_cents AS sale_bank_transfer_cents,
+    s.installment_cents AS sale_installment_cents,
+    s.payment_reference AS sale_payment_reference,
     s.sold_at AS sale_sold_at,
     s.warranty_starts AS sale_warranty_starts,
     s.warranty_ends AS sale_warranty_ends,
@@ -925,6 +1237,26 @@ export function activateDeviceSale(deviceId: string, input: SaleActivationInput,
   const invoiceReference = input.invoiceReference?.trim();
   const soldAt = input.soldAt?.trim();
   const salePriceCents = parseLkrToCents(input.salePriceLkr, "Sale price", false);
+  const paymentMethod = input.paymentMethod || "Cash";
+  let cashReceivedCents = input.cashReceivedLkr ? parseLkrToCents(input.cashReceivedLkr, "Cash received", true) : 0;
+  let cardAmountCents = input.cardAmountLkr ? parseLkrToCents(input.cardAmountLkr, "Card amount", true) : 0;
+  let bankTransferCents = input.bankTransferLkr ? parseLkrToCents(input.bankTransferLkr, "Bank transfer amount", true) : 0;
+  let installmentCents = input.installmentLkr ? parseLkrToCents(input.installmentLkr, "Installment amount", true) : 0;
+  const paymentReference = (input.paymentReference || "").trim();
+
+  if (cashReceivedCents === 0 && cardAmountCents === 0 && bankTransferCents === 0 && installmentCents === 0) {
+    if (paymentMethod === "Cash") cashReceivedCents = salePriceCents;
+    else if (paymentMethod === "Card") cardAmountCents = salePriceCents;
+    else if (paymentMethod === "Bank Transfer") bankTransferCents = salePriceCents;
+    else if (paymentMethod === "Installment") installmentCents = salePriceCents;
+  }
+
+  if (paymentMethod === "Split") {
+    const splitSum = cashReceivedCents + cardAmountCents + bankTransferCents + installmentCents;
+    if (splitSum !== salePriceCents) {
+      throw new Error(`Split payment total (${splitSum / 100} LKR) does not match sale price (${salePriceCents / 100} LKR).`);
+    }
+  }
 
   if (!customerName || customerName.length < 2 || customerName.length > 100) throw new Error("Customer name must contain 2 to 100 characters.");
   if (!customerEmail && !customerPhone) throw new Error("Enter the customer's email address or phone number.");
@@ -950,17 +1282,39 @@ export function activateDeviceSale(deviceId: string, input: SaleActivationInput,
   if (database.prepare("SELECT device_id FROM device_sales WHERE lower(invoice_reference) = lower(?)").get(invoiceReference)) throw new Error("This invoice reference has already been used.");
 
   const settings = readShopSettings(database);
+
+  // Anti-Fraud Manager PIN Protection for High Discounts
+  const discountLkrNum = input.discountLkr ? parseFloat(input.discountLkr) : 0;
+  const salePriceLkrNum = salePriceCents / 100;
+  const maxAllowedPercent = settings.maxCashierDiscountPercent ?? 10;
+  if (discountLkrNum > 0 && salePriceLkrNum > 0) {
+    const discountPercent = (discountLkrNum / salePriceLkrNum) * 100;
+    if (discountPercent > maxAllowedPercent) {
+      const requiredPin = settings.managerPin || "1234";
+      if (!input.managerPin || input.managerPin.trim() !== requiredPin) {
+        throw new Error(`Manager authorization required: Discounts above ${maxAllowedPercent}% require the store manager PIN.`);
+      }
+      recordAuditEvent(actor, "sales.manager_override", `Authorized high discount of ${discountPercent.toFixed(1)}% (${discountLkrNum} LKR) with manager PIN.`);
+    }
+  }
+
   const warrantyEnd = addCalendarMonths(saleDate, settings.warrantyMonths);
   const handoverToken = randomBytes(24).toString("base64url");
   const createdAt = new Date().toISOString();
 
   database.exec("BEGIN");
   try {
+    if (input.upgradePartIds && input.upgradePartIds.length > 0) {
+      applySaleCustomization(device.id, input.upgradePartIds, actor, database);
+    }
+
     database.prepare(`
       INSERT INTO device_sales (
         device_id, customer_name, customer_email, customer_phone, invoice_reference, sale_price_cents,
-        sold_at, warranty_starts, warranty_ends, handover_token, activated_by, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        payment_method, cash_received_cents, card_amount_cents, bank_transfer_cents, installment_cents, payment_reference,
+        sold_at, warranty_starts, warranty_ends, handover_token, activated_by, created_at,
+        discount_cents, discount_reason
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       device.id,
       customerName,
@@ -968,14 +1322,22 @@ export function activateDeviceSale(deviceId: string, input: SaleActivationInput,
       customerPhone,
       invoiceReference,
       salePriceCents,
+      paymentMethod,
+      cashReceivedCents,
+      cardAmountCents,
+      bankTransferCents,
+      installmentCents,
+      paymentReference,
       soldAt,
       soldAt,
       toIsoDate(warrantyEnd),
       handoverToken,
       actor,
       createdAt,
+      input.discountLkr ? Math.round(parseFloat(input.discountLkr) * 100) : 0,
+      (input.discountReason || "").trim(),
     );
-    database.prepare("UPDATE devices SET warranty_ends = ? WHERE id = ?").run(formatDisplayDate(warrantyEnd), device.id);
+    database.prepare("UPDATE devices SET warranty_ends = ?, status = 'Sold' WHERE id = ?").run(formatDisplayDate(warrantyEnd), device.id);
     database.exec("COMMIT");
   } catch (error) {
     database.exec("ROLLBACK");
@@ -1309,8 +1671,15 @@ export function createDeviceFromReport(
   if (photos.length > 4) throw new Error("A maximum of four evidence photos is allowed.");
 
   const database = getDatabase();
-  const existing = database.prepare("SELECT id FROM devices WHERE serial = ?").get(serial) as { id: string } | undefined;
-  if (existing) throw new Error(`A passport already exists for serial ${serial}.`);
+  const existing = database.prepare("SELECT id, status FROM devices WHERE serial = ?").get(serial) as { id: string; status: string } | undefined;
+  if (existing) {
+    if (existing.status !== "Sold") {
+      throw new Error(`A passport already exists for active serial ${serial} (Status: ${existing.status}).`);
+    }
+    const archiveSerial = `${serial}#CYCLE_${existing.id.slice(-6)}`;
+    database.prepare("UPDATE devices SET serial = ? WHERE id = ?").run(archiveSerial, existing.id);
+    recordAuditEvent(technician, "device.reintake", `Re-intake of previously sold serial ${serial}. Previous cycle archived as ${archiveSerial}.`);
+  }
 
   const scoring = calculateInspectionScore(report, checks);
   const firstDisk = report.storage?.[0];
@@ -1428,4 +1797,17 @@ function parsePhoto(photo: InspectionPhotoInput) {
   const data = Buffer.from(match[2], "base64");
   if (data.byteLength > 2 * 1024 * 1024) throw new Error(`Photo ${photo.name || "upload"} is larger than 2 MB.`);
   return { name: photo.name.slice(0, 120) || "Device photo", mimeType: match[1], data };
+}
+
+
+export function listOrganizations() {
+  return getDatabase().prepare("SELECT * FROM organizations ORDER BY name ASC").all();
+}
+
+export function getOrganization(id: string) {
+  return getDatabase().prepare("SELECT * FROM organizations WHERE id = ? OR slug = ?").get(id, id);
+}
+
+export function listBranches(organizationId = "default_org") {
+  return getDatabase().prepare("SELECT * FROM branches WHERE organization_id = ? ORDER BY is_warehouse DESC, name ASC").all(organizationId);
 }

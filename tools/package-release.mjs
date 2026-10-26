@@ -17,7 +17,7 @@ if (existsSync(zipPath)) rmSync(zipPath, { force: true });
 mkdirSync(stageDir, { recursive: true });
 
 // Directories to copy
-const copyDirs = ["app", "docs", "examples", "lib", "public", "tools"];
+const copyDirs = ["app", "docs", "examples", "lib", "public", "tools", "tests"];
 for (const dir of copyDirs) {
   const src = path.join(rootDir, dir);
   const dest = path.join(stageDir, dir);
@@ -25,6 +25,14 @@ for (const dir of copyDirs) {
     console.log(`Copying ${dir}/...`);
     cpSync(src, dest, { recursive: true });
   }
+}
+
+// Envato CodeCanyon standard documentation folder
+const docsSrc = path.join(rootDir, 'docs');
+const docDest = path.join(stageDir, 'documentation');
+if (existsSync(docsSrc)) {
+  console.log('Copying documentation/ for CodeCanyon compliance...');
+  cpSync(docsSrc, docDest, { recursive: true });
 }
 
 // Files to copy

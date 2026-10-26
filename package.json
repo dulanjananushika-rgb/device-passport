@@ -12,23 +12,30 @@
     "check:production": "node --env-file-if-exists=.env.production tools/check-production-env.mjs",
     "lint": "eslint . --ignore-pattern .next --ignore-pattern dist",
     "smoke": "node tools/smoke-test.mjs",
-    "package:release": "node tools/package-release.mjs"
+    "package:release": "node tools/package-release.mjs",
+    "test": "tsx --test --test-concurrency=1 tests/phase1-foundation.test.mjs tests/phase2-inventory-profit.test.mjs tests/phase3-warranty-pos.test.mjs tests/phase4-omnichannel-catalog.test.mjs tests/phase5-diagnostics.test.mjs tests/phase6-retail-settlement.test.mjs tests/phase7-retail-realworld-batch-a.test.mjs tests/phase8-retail-realworld-batch-b.test.mjs tests/phase9-retail-realworld-repair-till.test.mjs tests/phase10-international-global-market.test.mjs tests/phase11-realworld-shop-workflow.test.mjs tests/e2e-live-automated-system-verification.test.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1156.0",
+    "@aws-sdk/s3-request-presigner": "^3.1156.0",
+    "@neondatabase/serverless": "^1.2.0",
+    "@types/pg": "^8.23.1",
     "next": "16.3.4",
+    "pg": "^8.23.1",
+    "qrcode": "1.5.4",
     "react": "19.2.6",
-    "react-dom": "19.2.6",
-    "qrcode": "1.5.4"
+    "react-dom": "19.2.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
+    "@types/qrcode": "1.5.6",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "@types/qrcode": "1.5.6",
     "eslint": "9.39.4",
     "eslint-config-next": "16.3.4",
     "tailwindcss": "4.2.1",
+    "tsx": "^4.23.15",
     "typescript": "5.9.3"
   },
   "type": "module"

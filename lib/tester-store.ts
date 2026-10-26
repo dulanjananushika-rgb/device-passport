@@ -193,8 +193,15 @@ export function acceptSignedTestRun(authorization: string | null, input: SignedT
   const serial = report.device?.serialNumber?.trim();
   if (!model || !serial || serial === "UNKNOWN-SERIAL") throw new TesterRequestError("The signed report requires a device model and serial number.");
   if (model.length > 180 || serial.length > 180) throw new TesterRequestError("The report model or serial number is too long.");
-  if (database.prepare("SELECT id FROM devices WHERE serial = ? COLLATE NOCASE").get(serial)) {
-    throw new TesterRequestError(`A passport already exists for serial ${serial}.`, 409);
+  const existingDevice = database.prepare("SELECT id, status, serial FROM devices WHERE serial = ? COLLATE NOCASE").get(serial) as { id: string; status: string; serial: string } | undefined;
+  if (existingDevice) {
+    if (existingDevice.status !== "Sold") {
+      throw new TesterRequestError(`A passport already exists for active serial ${serial} (Status: ${existingDevice.status}).`, 409);
+    }
+    // Re-Intake Lifecycle Loop: Previous customer traded-in or sold back this device.
+    // Archive previous cycle serial to keep historical warranty receipts valid while freeing serial for the new passport.
+    const archiveSerial = `${serial}#CYCLE_${existingDevice.id.slice(-6)}`;
+    database.prepare("UPDATE devices SET serial = ? WHERE id = ?").run(archiveSerial, existingDevice.id);
   }
   const pendingRows = database.prepare("SELECT report_json FROM tester_test_runs WHERE status = 'Pending'").all() as Array<{ report_json: string }>;
   if (pendingRows.some((row) => parseJson<DiagnosticReport>(row.report_json, {}).device?.serialNumber?.trim().toLowerCase() === serial.toLowerCase())) {

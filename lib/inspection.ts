@@ -26,8 +26,38 @@ export type DiagnosticReport = {
     serialNumber?: string;
     processor?: string;
     memoryGB?: number;
+    gpu?: string;
+    gpus?: Array<{
+      name?: string;
+      vramGB?: number | null;
+      driverVersion?: string;
+      resolution?: string | null;
+    }>;
+    displayResolution?: string;
+    ramSlotsTotal?: number;
+    ramSlotsUsed?: number;
+    ramSlotsFree?: number;
+    ramSpeedMT?: number;
+    wifiAdapter?: string;
+    bluetoothPresent?: boolean;
+    isDesktop?: boolean;
   };
-  battery?: { healthPercent?: number; cycleCount?: number };
+  battery?: {
+    present?: boolean;
+    designedCapacityMWh?: number | null;
+    fullChargeCapacityMWh?: number | null;
+    healthPercent?: number | null;
+    cycleCount?: number | null;
+    charging?: boolean;
+    batteries?: Array<{
+      index: number;
+      designCapacityMWh?: number;
+      fullChargeCapacityMWh?: number;
+      healthPercent?: number;
+      cycleCount?: number;
+    }>;
+    note?: string | null;
+  };
   storage?: Array<{
     model?: string;
     healthStatus?: string;
@@ -116,7 +146,8 @@ export const inspectionLabels: Record<InspectionKey, { label: string; hint: stri
 };
 
 export function calculateInspectionScore(report: DiagnosticReport, checks: InspectionChecks) {
-  const batteryHealth = clamp(report.battery?.healthPercent ?? 0);
+  const hasBattery = report.device?.isDesktop !== true && report.battery?.present !== false;
+  const batteryHealth = hasBattery ? clamp(report.battery?.healthPercent ?? 0) : 100;
   const firstDisk = report.storage?.[0];
   const storageTemperatureHigh = typeof firstDisk?.temperatureC === "number" && firstDisk.temperatureC > 75;
   const storageWearHigh = typeof firstDisk?.wearPercent === "number" && firstDisk.wearPercent > 90;
@@ -130,9 +161,13 @@ export function calculateInspectionScore(report: DiagnosticReport, checks: Inspe
   const cpuTemperatureHigh = typeof stressTest?.peakTemperatureC === "number" && stressTest.peakTemperatureC > 95;
   const stressPassed = stressTest?.executed ? stressTest.passed === true && !cpuTemperatureHigh : null;
   const performanceScore = stressTest?.executed ? (stressPassed ? 100 : 35) : 85;
-  const score = Math.round(batteryHealth * 0.35 + storageHealth * 0.25 + performanceScore * 0.15 + manualScore * 0.25);
+
+  const score = hasBattery
+    ? Math.round(batteryHealth * 0.35 + storageHealth * 0.25 + performanceScore * 0.15 + manualScore * 0.25)
+    : Math.round(storageHealth * 0.40 + performanceScore * 0.25 + manualScore * 0.35);
+
   const grade = score >= 88 ? "A" : score >= 74 ? "B" : "C";
-  const needsReview = batteryHealth < 75 || !storageOkay || stressPassed === false || failedChecks.length > 0;
+  const needsReview = (hasBattery && batteryHealth < 75) || !storageOkay || stressPassed === false || failedChecks.length > 0;
 
   return { batteryHealth, storageHealth, performanceScore, manualScore, score, grade, needsReview, failedChecks } as const;
 }

@@ -1,0 +1,102 @@
+{
+    "reportVersion":  "2.5",
+    "collectedAt":  "2026-10-26T01:47:06.3853715Z",
+    "collector":  {
+                      "name":  "DevicePassport Universal Windows Collector",
+                      "version":  "2.5.0",
+                      "hostname":  "DESKTOP-C302VTE"
+                  },
+    "device":  {
+                   "manufacturer":  "Dell Inc.",
+                   "model":  "Latitude 5490",
+                   "serialNumber":  "1FX6VN2",
+                   "processor":  "Intel(R) Core(TM) i7-8650U CPU @ 1.90GHz",
+                   "gpu":  "Intel(R) UHD Graphics 620",
+                   "gpus":  [
+                                {
+                                    "name":  "Intel(R) UHD Graphics 620",
+                                    "vramGB":  1,
+                                    "driverVersion":  "31.0.101.2134",
+                                    "resolution":  "1366x768 @ 60Hz"
+                                }
+                            ],
+                   "displayResolution":  "1366x768 @ 60Hz",
+                   "memoryGB":  16,
+                   "ramSlotsTotal":  2,
+                   "ramSlotsUsed":  1,
+                   "ramSlotsFree":  1,
+                   "ramSpeedMT":  2400,
+                   "biosVersion":  "1.38.0",
+                   "operatingSystem":  "Microsoft Windows 11 Pro",
+                   "wifiAdapter":  "Intel(R) Dual Band Wireless-AC 8265",
+                   "bluetoothPresent":  true,
+                   "isDesktop":  false
+               },
+    "battery":  {
+                    "present":  true,
+                    "designedCapacityMWh":  67997,
+                    "fullChargeCapacityMWh":  22268,
+                    "healthPercent":  33,
+                    "cycleCount":  null,
+                    "charging":  false,
+                    "batteries":  [
+                                      {
+                                          "index":  1,
+                                          "designCapacityMWh":  67997,
+                                          "fullChargeCapacityMWh":  22268,
+                                          "healthPercent":  33,
+                                          "cycleCount":  0
+                                      }
+                                  ],
+                    "note":  null
+                },
+    "storage":  [
+                    {
+                        "model":  "TOSHIBA THNSFK256GVN8",
+                        "serialNumber":  "67GS108ITHMT",
+                        "interface":  "RAID",
+                        "mediaType":  "SSD",
+                        "sizeGB":  238.5,
+                        "healthStatus":  "Healthy",
+                        "powerOnHours":  null,
+                        "temperatureC":  null,
+                        "wearPercent":  null,
+                        "smartSource":  "Unavailable"
+                    }
+                ],
+    "performance":  {
+                        "memory":  {
+                                       "availableGB":  5.3,
+                                       "usedPercent":  67
+                                   },
+                        "cpu":  {
+                                    "logicalProcessors":  8,
+                                    "loadPercentBeforeTest":  39,
+                                    "temperatureCBeforeTest":  null
+                                },
+                        "stressTest":  {
+                                           "executed":  false,
+                                           "durationSeconds":  0,
+                                           "passed":  null,
+                                           "averageLoadPercent":  null,
+                                           "peakTemperatureC":  null,
+                                           "sampleCount":  0,
+                                           "workerCount":  0,
+                                           "completedWorkers":  0,
+                                           "note":  "Stress test skipped by technician."
+                                       }
+                    },
+    "manualChecks":  {
+                         "display":  "Not checked",
+                         "keyboard":  "Not checked",
+                         "camera":  "Not checked",
+                         "audio":  "Not checked",
+                         "ports":  "Not checked",
+                         "wifiBluetooth":  "Not checked"
+                     },
+    "integrity":  {
+                      "source":  "local-windows-cim",
+                      "signed":  false,
+                      "note":  "Tester V2.5 report. Temperature and SMART fields remain null when firmware restricts non-elevated queries. UTF-8 No-BOM standard."
+                  }
+}

@@ -216,7 +216,7 @@
 
     <div class="nav-group">
       <div class="nav-title">Deployment & Help</div>
-      <a href="#cloud-deploy">Deploy to Netlify / VPS</a>
+      <a href="#cloud-deploy">Cloud & Docker Deployment</a>
       <a href="#faq">FAQ & Troubleshooting</a>
     </div>
   </aside>
@@ -460,13 +460,28 @@ docker compose logs -f</code></pre>
 
     <!-- Section 10 -->
     <section id="cloud-deploy">
-      <h2>10. Cloud Deployment Guide</h2>
-      <p>DevicePassport runs seamlessly on any modern cloud hosting platform:</p>
+      <h2>10. Production Deployment & Cloud Hosting Guide</h2>
+      <p>DevicePassport is engineered for production reliability across self-hosted and cloud environments. Database and storage hosting depend on your deployment architecture:</p>
+
+      <h3>A. Persistent Production Deployment (Recommended for Local / VPS)</h3>
+      <p>The standard SQLite database requires a persistent disk volume to prevent data loss across restarts:</p>
       <ul>
-        <li><strong>Netlify / Vercel:</strong> Zero-config Next.js SSR deployment. (See our live Netlify demo).</li>
-        <li><strong>Render:</strong> Use the included <code>render.yaml</code> blueprint for a 1-click Docker web service.</li>
-        <li><strong>Ubuntu / Debian VPS (DigitalOcean / Hetzner / AWS):</strong> Clone the repository, configure <code>.env.production</code>, and run <code>docker compose up -d</code> behind NGINX or Caddy reverse proxy.</li>
+        <li><strong>Docker & Docker Compose (Included):</strong> Deploy using the included <code>Dockerfile</code> and <code>compose.yaml</code>. The database is stored on a mounted persistent volume at <code>/app/.data</code>, ensuring uninterrupted data retention.</li>
+        <li><strong>Linux VPS (Ubuntu / Debian on Hetzner, DigitalOcean, Linode, AWS EC2):</strong> Clone the repository, configure <code>.env.production</code>, and run <code>docker compose up -d --build</code> behind an NGINX or Caddy reverse proxy with automated SSL.</li>
+        <li><strong>Render (Managed Docker):</strong> Deploy using the included <code>render.yaml</code> blueprint. A paid instance with a persistent disk attached at <code>/app/.data</code> is required for SQLite durability.</li>
       </ul>
+
+      <h3>B. Serverless Cloud Production (Vercel / Supabase / Neon PostgreSQL)</h3>
+      <p>For scalable, zero-maintenance serverless cloud deployment:</p>
+      <ul>
+        <li><strong>PostgreSQL Database:</strong> Connect your serverless Next.js app to any PostgreSQL database (such as <strong>Neon.tech</strong> or <strong>Supabase</strong>) by supplying the <code>DATABASE_URL=postgres://...</code> environment variable. The built-in dual-database engine automatically activates PostgreSQL mode.</li>
+        <li><strong>Cloudflare R2 Object Storage:</strong> Store diagnostic photos and warranty evidence in Cloudflare R2 by setting <code>R2_BUCKET_NAME</code>, <code>R2_ACCESS_KEY_ID</code>, and <code>R2_SECRET_ACCESS_KEY</code> for zero egress fees.</li>
+      </ul>
+
+      <h3>C. Disposable Live Preview Demo vs Production</h3>
+      <div style="background: rgba(59, 130, 246, 0.08); border-left: 4px solid #3b82f6; padding: 12px 16px; border-radius: 4px; margin: 12px 0;">
+        <p style="margin: 0;"><strong>Note on our Live Demo:</strong> Our public online demo (hosted on Netlify) is configured as a <em>stateless, disposable preview</em> intended solely for buyer evaluation. For real-world workshop records, customer warranties, and financial ledgers, use the persistent Docker deployment or PostgreSQL cloud configuration described above.</p>
+      </div>
     </section>
 
     <!-- Section 11 -->

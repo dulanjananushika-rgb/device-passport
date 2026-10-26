@@ -79,3 +79,34 @@ export type ProcurementDashboard = {
   supplierPerformance: SupplierPerformance[];
   intakes: StockIntake[];
 };
+
+export const rmaStatuses = [
+  "Dispatched",
+  "Under Review",
+  "Replaced",
+  "Credit Note Issued",
+  "Rejected",
+] as const;
+
+export type RmaStatus = (typeof rmaStatuses)[number];
+
+export interface SupplierRmaRecord {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  rmaNumber: string;
+  itemType: "Spare Part" | "Device / Laptop";
+  itemName: string;
+  serial: string;
+  faultDescription: string;
+  status: RmaStatus;
+  dispatchedAt: string;
+  resolvedAt: string | null;
+  creditAmountCents: number;
+  formattedCredit: string;
+  replacementSerial: string | null;
+  notes: string;
+  handledBy: string;
+  createdAt: string;
+  updatedAt: string;
+}

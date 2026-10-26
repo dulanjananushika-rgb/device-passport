@@ -48,3 +48,5 @@ next-env.d.ts
 /work/
 
 /dist-release/
+/dist-codecanyon/
+/dist-codester/

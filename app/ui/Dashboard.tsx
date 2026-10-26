@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { DeviceRecord } from "../data/devices";
@@ -24,12 +24,14 @@ import { AnalyticsPanel } from "./AnalyticsPanel";
 import type { SystemReadiness } from "../../lib/readiness";
 import type { NotificationItem } from "../../lib/notifications";
 import type { FinanceAnalytics } from "../../lib/finance";
+import type { TechnicianPayoutSummary } from "../../lib/operations";
 import type { ProcurementDashboard } from "../../lib/procurement-types";
 import { ProcurementPanel } from "./ProcurementPanel";
+import { RepairsPanel } from "./RepairsPanel";
 import { TesterAgentsPanel } from "./TesterAgentsPanel";
 import type { PendingTestRun, TesterAgent } from "../../lib/tester-types";
 
-type View = "overview" | "procurement" | "devices" | "sales" | "warranties" | "notifications" | "reports" | "analytics" | "staff" | "settings";
+type View = "overview" | "procurement" | "devices" | "sales" | "warranties" | "repairs" | "notifications" | "reports" | "analytics" | "staff" | "settings";
 type WizardStage = 1 | 2 | 3;
 
 const viewTitles: Record<View, { eyebrow: string; title: string }> = {
@@ -38,6 +40,7 @@ const viewTitles: Record<View, { eyebrow: string; title: string }> = {
   devices: { eyebrow: "Inventory", title: "Device passports" },
   sales: { eyebrow: "Customer handover", title: "Sales activation" },
   warranties: { eyebrow: "After-sales", title: "Warranty claims" },
+  repairs: { eyebrow: "Workshop", title: "Customer repairs & job sheets" },
   notifications: { eyebrow: "Customer follow-up", title: "Notification centre" },
   reports: { eyebrow: "Performance", title: "Health reports" },
   analytics: { eyebrow: "Business intelligence", title: "Profit & reliability" },
@@ -76,6 +79,75 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
   const [view, setView] = useState<View>("overview");
   const [query, setQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+
+  // Cashier & Workshop Dark Mode State
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    const saved = localStorage.getItem("devicepassport_theme");
+    if (saved) return saved === "dark";
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (isDarkMode) {
+      root.setAttribute("data-theme", "dark");
+      root.classList.add("dark");
+      document.body.classList.add("dark");
+      localStorage.setItem("devicepassport_theme", "dark");
+    } else {
+      root.setAttribute("data-theme", "light");
+      root.classList.remove("dark");
+      document.body.classList.remove("dark");
+      localStorage.setItem("devicepassport_theme", "light");
+    }
+  }, [isDarkMode]);
+
+  function toggleTheme() {
+    setIsDarkMode((prev) => !prev);
+  }
+
+  // Quick POS Hotkeys & Modals
+  const [showHotkeysModal, setShowHotkeysModal] = useState(false);
+  const [showQuickStickerModal, setShowQuickStickerModal] = useState(false);
+  const [stickerSearch, setStickerSearch] = useState("");
+  const [repairTrigger, setRepairTrigger] = useState(0);
+
+  // Global Barcode Scanner Gun State
+  const barcodeScanRef = useRef<{ buffer: string; lastTime: number }>({ buffer: "", lastTime: 0 });
+  const [scannedToast, setScannedToast] = useState<{ title: string; subtitle: string; type: "success" | "info" | "warning" } | null>(null);
+  const [preselectedDeviceId, setPreselectedDeviceId] = useState<string>("");
+
+  // Global Keyboard Shortcuts (F1, F2, F4, F9, Ctrl+D, Esc)
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const isInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement;
+
+      if (e.key === "F2") {
+        e.preventDefault();
+        setView("sales");
+      } else if (e.key === "F4") {
+        e.preventDefault();
+        setShowQuickStickerModal(true);
+      } else if (e.key === "F9") {
+        e.preventDefault();
+        setView("repairs");
+        setRepairTrigger((prev) => prev + 1);
+      } else if (e.key === "F1") {
+        e.preventDefault();
+        setShowHotkeysModal((prev) => !prev);
+      } else if ((e.key === "d" || e.key === "D") && (e.ctrlKey || e.altKey) && !isInput) {
+        e.preventDefault();
+        toggleTheme();
+      } else if (e.key === "Escape") {
+        setShowHotkeysModal(false);
+        setShowQuickStickerModal(false);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
   const [stage, setStage] = useState<WizardStage>(1);
   const [imported, setImported] = useState<DiagnosticReport | null>(null);
   const [selectedTestRunId, setSelectedTestRunId] = useState("");
@@ -285,11 +357,27 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
           <NavButton icon="D" label="Devices" active={view === "devices"} onClick={() => setView("devices")} />
           <NavButton icon="$" label="Sales" active={view === "sales"} onClick={() => setView("sales")} />
           <NavButton icon="C" label="Claims" active={view === "warranties"} onClick={() => setView("warranties")} />
+          <NavButton icon="W" label="Repairs" active={view === "repairs"} onClick={() => setView("repairs")} />
           <NavButton icon="N" label="Notifications" active={view === "notifications"} onClick={openNotifications} />
           <NavButton icon="R" label="Reports" active={view === "reports"} onClick={() => setView("reports")} />
           {isOwner && <NavButton icon="P" label="Analytics" active={view === "analytics"} onClick={openAnalytics} />}
           {isOwner && <NavButton icon="T" label="Staff" active={view === "staff"} onClick={() => setView("staff")} />}
           <NavButton icon="S" label="Settings" active={view === "settings"} onClick={() => setView("settings")} />
+        </div>
+        <div className="nav-label">Public Portals</div>
+        <div className="nav-stack">
+          <a className="nav-item" href="/catalog" target="_blank" rel="noopener noreferrer">
+            <span className="nav-icon" aria-hidden="true">🌐</span>
+            <span>Live Showroom</span>
+          </a>
+          <a className="nav-item" href="/portal" target="_blank" rel="noopener noreferrer">
+            <span className="nav-icon" aria-hidden="true">🔑</span>
+            <span>Customer Portal</span>
+          </a>
+          <a className="nav-item" href="/settlement" target="_blank" rel="noopener noreferrer">
+            <span className="nav-icon" aria-hidden="true">📊</span>
+            <span>Day-End Z-Report</span>
+          </a>
         </div>
 
         <div className="sidebar-account">
@@ -303,6 +391,25 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
         <header className="topbar">
           <div><div className="eyebrow">{title.eyebrow}</div><h1>{title.title}</h1></div>
           <div className="top-actions">
+            {/* Quick POS Hotkeys pill bar */}
+            <div className="hotkeys-quick-bar">
+              <button className="hotkey-pill" type="button" onClick={() => setView("sales")} title="Quick Hotkey: F2">
+                <kbd>F2</kbd> Sale
+              </button>
+              <button className="hotkey-pill" type="button" onClick={() => setShowQuickStickerModal(true)} title="Quick Hotkey: F4">
+                <kbd>F4</kbd> Sticker
+              </button>
+              <button className="hotkey-pill" type="button" onClick={() => { setView("repairs"); setRepairTrigger((p) => p + 1); }} title="Quick Hotkey: F9">
+                <kbd>F9</kbd> Repair
+              </button>
+              <button className="hotkey-pill" type="button" onClick={() => setShowHotkeysModal(true)} title="Shortcuts Cheat-Sheet (F1)">
+                <kbd>F1</kbd> ⌨️
+              </button>
+              <button className="theme-toggle-button" type="button" onClick={toggleTheme} title="Toggle Dark/Light Mode (Ctrl+D)">
+                {isDarkMode ? "☀️ Light" : "🌙 Dark"}
+              </button>
+            </div>
+
             <button className="icon-button" aria-label={`Notifications${activeNotificationCount ? ` (${activeNotificationCount})` : ""}`} onClick={openNotifications}>N{activeNotificationCount > 0 && <small>{activeNotificationCount > 9 ? "9+" : activeNotificationCount}</small>}</button>
             {canTestDevices && <button className="button primary" onClick={() => setModalOpen(true)}>+ New device test</button>}
           </div>
@@ -313,14 +420,148 @@ export function Dashboard({ initialDevices, initialClaims, initialClaimAssignees
         )}
         {view === "procurement" && procurement && <ProcurementPanel procurement={procurement} canManage={isOwner} onProcurementChange={setProcurement} onAuditChange={refreshAudit} onStartTest={() => setModalOpen(true)} />}
         {view === "devices" && <DeviceList devices={filteredDevices} query={query} onQuery={setQuery} onNewTest={() => setModalOpen(true)} canCreate={canTestDevices} />}
-        {view === "sales" && <SalesPanel devices={records} canActivate={canActivateDeviceSales} warrantyMonths={settings.warrantyMonths} onDeviceChange={updateDevice} onAuditChange={refreshAudit} />}
+        {view === "sales" && <SalesPanel devices={records} canActivate={canActivateDeviceSales} warrantyMonths={settings.warrantyMonths} onDeviceChange={updateDevice} onAuditChange={refreshAudit} selectedDeviceId={preselectedDeviceId} />}
         {view === "warranties" && <Warranties records={records} claims={claims} assignees={initialClaimAssignees} currentStaffId={session.id} canRecordCosts={session.role === "Owner" || session.role === "Technician"} onClaimUpdate={(updated) => setClaims((current) => current.map((claim) => claim.id === updated.id ? updated : claim))} />}
+        {view === "repairs" && <RepairsPanel canManage={isOwner || session.role === "Technician"} onAuditChange={refreshAudit} openCreateTrigger={repairTrigger} />}
         {view === "notifications" && <NotificationCenter initialNotifications={notifications} onNotificationsChange={setNotifications} />}
         {view === "reports" && <Reports records={records} />}
         {view === "analytics" && isOwner && analytics && <AnalyticsPanel analytics={analytics} onAnalyticsChange={setAnalytics} onAuditChange={refreshAudit} />}
         {view === "staff" && isOwner && <StaffPanel staff={staff} audit={audit} currentStaffId={session.id} onStaffChange={setStaff} onAuditChange={refreshAudit} />}
         {view === "settings" && <SettingsPanel settings={settings} session={session} initialSystem={initialSystem} testerAgents={testerAgents} onTesterAgentsChange={setTesterAgents} onSettingsChange={setSettings} onAuditChange={refreshAudit} />}
       </main>
+
+      {/* Quick Shelf Price Tag Sticker Modal (F4) */}
+      {showQuickStickerModal && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && setShowQuickStickerModal(false)}>
+          <section className="modal" role="dialog" style={{ maxWidth: "540px" }}>
+            <div className="modal-head">
+              <div>
+                <div className="eyebrow">Quick Barcode & Shelf Label (F4)</div>
+                <h2>🏷️ Direct Thermal Price Sticker (50x30mm)</h2>
+              </div>
+              <button className="close-button" onClick={() => setShowQuickStickerModal(false)}>x</button>
+            </div>
+            <div className="modal-body" style={{ padding: "20px" }}>
+              <label style={{ display: "block", marginBottom: "12px", fontWeight: "bold" }}>
+                Scan Barcode or Search Serial / Model:
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Scan serial or type e.g. DELL-5420..."
+                  value={stickerSearch}
+                  onChange={(e) => setStickerSearch(e.target.value)}
+                  style={{ width: "100%", padding: "10px", marginTop: "6px", fontSize: "14px" }}
+                />
+              </label>
+
+              <div style={{ maxHeight: "280px", overflowY: "auto", border: "1px solid var(--line)", borderRadius: "8px" }}>
+                {records
+                  .filter((d) => {
+                    if (!stickerSearch.trim()) return d.lifecycleStatus === "Ready";
+                    const q = stickerSearch.toLowerCase();
+                    return d.serial.toLowerCase().includes(q) || d.name.toLowerCase().includes(q) || d.model.toLowerCase().includes(q);
+                  })
+                  .slice(0, 8)
+                  .map((device) => (
+                    <div
+                      key={device.id}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "10px 14px",
+                        borderBottom: "1px solid var(--line)",
+                      }}
+                    >
+                      <div>
+                        <strong>{device.name}</strong>
+                        <div style={{ fontSize: "12px", color: "var(--muted)" }}>
+                          SN: <code>{device.serial}</code> | Grade {device.grade} | {device.processor}
+                        </div>
+                      </div>
+                      <a
+                        className="button primary small"
+                        href={`/sticker/${device.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ padding: "6px 12px", fontSize: "12px", textDecoration: "none" }}
+                      >
+                        🖨️ Print Label
+                      </a>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* POS Shortcuts Cheat-Sheet Modal (F1) */}
+      {scannedToast && (
+        <div style={{
+          position: "fixed",
+          top: "24px",
+          right: "24px",
+          zIndex: 9999,
+          background: scannedToast.type === "success" ? "#065f46" : scannedToast.type === "warning" ? "#92400e" : "#1e40af",
+          color: "#fff",
+          padding: "12px 20px",
+          borderRadius: "8px",
+          boxShadow: "0 10px 25px -5px rgba(0,0,0,0.35)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "4px",
+          fontSize: "14px",
+          border: "1px solid rgba(255,255,255,0.2)"
+        }}>
+          <strong>📷 {scannedToast.title}</strong>
+          <small style={{ opacity: 0.9 }}>{scannedToast.subtitle}</small>
+        </div>
+      )}
+
+      {showHotkeysModal && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && setShowHotkeysModal(false)}>
+          <section className="modal" role="dialog" style={{ maxWidth: "500px" }}>
+            <div className="modal-head">
+              <div>
+                <div className="eyebrow">Keyboard Accelerators</div>
+                <h2>⌨️ POS & Workshop Hotkeys</h2>
+              </div>
+              <button className="close-button" onClick={() => setShowHotkeysModal(false)}>x</button>
+            </div>
+            <div className="modal-body" style={{ padding: "20px" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <tbody>
+                  <tr style={{ borderBottom: "1px solid var(--line)" }}>
+                    <td style={{ padding: "10px 0" }}><kbd className="hotkey-pill"><kbd>F1</kbd></kbd></td>
+                    <td style={{ padding: "10px 0" }}><strong>Toggle Hotkeys Help</strong><br/><small style={{ color: "var(--muted)" }}>Open or close this shortcuts guide</small></td>
+                  </tr>
+                  <tr style={{ borderBottom: "1px solid var(--line)" }}>
+                    <td style={{ padding: "10px 0" }}><kbd className="hotkey-pill"><kbd>F2</kbd></kbd></td>
+                    <td style={{ padding: "10px 0" }}><strong>Cashier POS Sales</strong><br/><small style={{ color: "var(--muted)" }}>Jump straight to sale activation & invoicing</small></td>
+                  </tr>
+                  <tr style={{ borderBottom: "1px solid var(--line)" }}>
+                    <td style={{ padding: "10px 0" }}><kbd className="hotkey-pill"><kbd>F4</kbd></kbd></td>
+                    <td style={{ padding: "10px 0" }}><strong>Quick Price Sticker (50x30mm)</strong><br/><small style={{ color: "var(--muted)" }}>Scan serial and print Code128 thermal tag</small></td>
+                  </tr>
+                  <tr style={{ borderBottom: "1px solid var(--line)" }}>
+                    <td style={{ padding: "10px 0" }}><kbd className="hotkey-pill"><kbd>F9</kbd></kbd></td>
+                    <td style={{ padding: "10px 0" }}><strong>Customer Repair Workshop</strong><br/><small style={{ color: "var(--muted)" }}>Open New Repair Job Sheet intake modal</small></td>
+                  </tr>
+                  <tr style={{ borderBottom: "1px solid var(--line)" }}>
+                    <td style={{ padding: "10px 0" }}><kbd className="hotkey-pill"><kbd>Ctrl</kbd> + <kbd>D</kbd></kbd></td>
+                    <td style={{ padding: "10px 0" }}><strong>Toggle Dark / Light Mode</strong><br/><small style={{ color: "var(--muted)" }}>Protect eyes during long workshop shifts</small></td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: "10px 0" }}><kbd className="hotkey-pill"><kbd>Esc</kbd></kbd></td>
+                    <td style={{ padding: "10px 0" }}><strong>Close Active Dialog</strong><br/><small style={{ color: "var(--muted)" }}>Dismiss any open popup or modal</small></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      )}
 
       {modalOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closeModal()}>
@@ -625,6 +866,39 @@ function StaffPanel({ staff, audit, currentStaffId, onStaffChange, onAuditChange
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const [commissions, setCommissions] = useState<TechnicianPayoutSummary[]>([]);
+  const [loadingCommissions, setLoadingCommissions] = useState(false);
+  const [selectedTech, setSelectedTech] = useState("");
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [endDate, setEndDate] = useState(() => {
+    return new Date().toISOString().slice(0, 10);
+  });
+  const [expandedTech, setExpandedTech] = useState<string | null>(null);
+
+  async function loadCommissions() {
+    setLoadingCommissions(true);
+    try {
+      const q = new URLSearchParams();
+      if (selectedTech) q.set("technician", selectedTech);
+      if (startDate) q.set("startDate", startDate);
+      if (endDate) q.set("endDate", endDate);
+      const res = await fetch(`/api/staff/commissions?${q.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCommissions(data.summaries || []);
+        if (data.summaries && data.summaries.length > 0) {
+          setExpandedTech(data.summaries[0].technicianName);
+        }
+      }
+    } catch {}
+    finally {
+      setLoadingCommissions(false);
+    }
+  }
+
   async function createStaff() {
     setSaving(true);
     setError("");
@@ -669,6 +943,134 @@ function StaffPanel({ staff, audit, currentStaffId, onStaffChange, onAuditChange
           <section className="panel staff-list-card">
             <div className="panel-head"><div><h3 className="panel-title">Team accounts</h3><p className="panel-subtitle">Roles are enforced by the API, not only the interface</p></div></div>
             <div className="staff-list">{staff.map((member) => <StaffEditor key={member.id} member={member} isCurrent={member.id === currentStaffId} onUpdated={(updated) => { onStaffChange(staff.map((item) => item.id === updated.id ? updated : item)); void onAuditChange(); }} />)}</div>
+          </section>
+
+          <section className="panel commissions-card" style={{ marginTop: '24px', background: '#0f172a', border: '1px solid #334155', borderRadius: '14px', padding: '20px' }}>
+            <div className="panel-head" style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '20px' }}>🔧</span>
+                  <h3 className="panel-title" style={{ fontSize: '18px', fontWeight: '700', color: '#f8fafc' }}>Technician Productivity & Commission Summary</h3>
+                </div>
+                <p className="panel-subtitle" style={{ color: '#94a3b8', fontSize: '13px', marginTop: '4px' }}>
+                  Piece-rate commissions: Diagnostic Audits (Rs. 350) + Refurbishment Tasks (Rs. 500 - 1,500)
+                </p>
+              </div>
+              <button
+                type="button"
+                className="button secondary small"
+                onClick={loadCommissions}
+                disabled={loadingCommissions}
+              >
+                {loadingCommissions ? "Calculating..." : "Calculate Commissions"}
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '20px', background: '#1e293b', padding: '14px', borderRadius: '10px' }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#cbd5e1' }}>
+                Technician
+                <select
+                  style={{ background: '#0f172a', border: '1px solid #334155', color: '#f8fafc', padding: '6px 10px', borderRadius: '6px' }}
+                  value={selectedTech}
+                  onChange={(e) => setSelectedTech(e.target.value)}
+                >
+                  <option value="">All Technicians</option>
+                  {staff.filter((s) => s.role === "Technician" || s.role === "Owner").map((s) => (
+                    <option key={s.id} value={s.name}>{s.name} ({s.role})</option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#cbd5e1' }}>
+                From Date
+                <input
+                  type="date"
+                  style={{ background: '#0f172a', border: '1px solid #334155', color: '#f8fafc', padding: '6px 10px', borderRadius: '6px' }}
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#cbd5e1' }}>
+                To Date
+                <input
+                  type="date"
+                  style={{ background: '#0f172a', border: '1px solid #334155', color: '#f8fafc', padding: '6px 10px', borderRadius: '6px' }}
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
+              </label>
+            </div>
+
+            {commissions.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {commissions.map((c) => {
+                  const isExpanded = expandedTech === c.technicianName;
+                  return (
+                    <div key={c.technicianName} style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '10px', padding: '16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                        <div>
+                          <strong style={{ fontSize: '16px', color: '#f8fafc' }}>{c.technicianName}</strong>
+                          <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>
+                            {c.inspectionsCompleted} inspections (Rs. {((c.inspectionsCommissionCents || 0) / 100).toLocaleString()}) + {c.tasksCompleted} repair tasks (Rs. {((c.tasksCommissionCents || 0) / 100).toLocaleString()})
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                          <div style={{ textAlign: 'right' }}>
+                            <span style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase' }}>Payout Due</span>
+                            <div style={{ fontSize: '18px', fontWeight: '700', color: '#10b981' }}>{c.formattedTotalCommission}</div>
+                          </div>
+                          <button
+                            type="button"
+                            className="button secondary small"
+                            style={{ fontSize: '11px', padding: '4px 8px' }}
+                            onClick={() => setExpandedTech(isExpanded ? null : c.technicianName)}
+                          >
+                            {isExpanded ? "Hide Details" : `View ${c.items.length} Tasks`}
+                          </button>
+                        </div>
+                      </div>
+
+                      {isExpanded && c.items.length > 0 && (
+                        <div style={{ marginTop: '16px', borderTop: '1px solid #334155', paddingTop: '12px' }}>
+                          <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                            <thead>
+                              <tr style={{ color: '#94a3b8', textAlign: 'left', borderBottom: '1px solid #334155' }}>
+                                <th style={{ padding: '6px' }}>Type</th>
+                                <th style={{ padding: '6px' }}>Device / Serial</th>
+                                <th style={{ padding: '6px' }}>Task Description</th>
+                                <th style={{ padding: '6px' }}>Completed At</th>
+                                <th style={{ padding: '6px', textAlign: 'right' }}>Commission</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {c.items.map((it) => (
+                                <tr key={it.id} style={{ borderBottom: '1px solid #1e293b' }}>
+                                  <td style={{ padding: '6px' }}>
+                                    <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: it.type === 'Diagnostic Inspection' ? '#0369a133' : '#065f4633', color: it.type === 'Diagnostic Inspection' ? '#38bdf8' : '#34d399' }}>
+                                      {it.type}
+                                    </span>
+                                  </td>
+                                  <td style={{ padding: '6px' }}>
+                                    <strong>{it.deviceName}</strong>
+                                    <div style={{ color: '#94a3b8', fontSize: '11px' }}>{it.serial}</div>
+                                  </td>
+                                  <td style={{ padding: '6px', color: '#cbd5e1' }}>{it.description}</td>
+                                  <td style={{ padding: '6px', color: '#94a3b8' }}>{it.completedAt.slice(0, 10)}</td>
+                                  <td style={{ padding: '6px', textAlign: 'right', fontWeight: '600', color: '#10b981' }}>{it.formattedCommission}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '20px', color: '#64748b', fontSize: '13px' }}>
+                Click &quot;Calculate Commissions&quot; to review piece-rate earnings for the selected period.
+              </div>
+            )}
           </section>
         </div>
 
@@ -804,7 +1206,137 @@ function SettingsPanel({ settings, session, initialSystem, testerAgents, onTeste
           </section>
 
           {session.role === "Owner" && <section className="panel settings-card"><div className="panel-head"><div><h3 className="panel-title">Warranty defaults</h3><p className="panel-subtitle">Applied automatically to every new device passport</p></div></div><div className="settings-fields"><label>Coverage duration<select value={form.warrantyMonths} onChange={(event) => change("warrantyMonths", Number(event.target.value))}>{[1,3,6,12,18,24,36].map((months) => <option value={months} key={months}>{months} month{months === 1 ? "" : "s"}</option>)}</select></label><label className="full-field">Public warranty terms<textarea value={form.warrantyTerms} maxLength={1200} onChange={(event) => change("warrantyTerms", event.target.value)} /></label></div>{settingsSuccess && <div className="success-box">{settingsSuccess}</div>}<button className="button primary" type="button" disabled={saving} onClick={saveSettings}>{saving ? "Saving settings…" : "Save shop settings"}</button></section>}
-          {session.role === "Owner" && <TesterAgentsPanel agents={testerAgents} onAgentsChange={onTesterAgentsChange} onAuditChange={onAuditChange} />}
+                    {session.role === "Owner" && (
+            <section className="panel settings-card" style={{ marginTop: '20px' }}>
+              <div className="panel-head">
+                <div>
+                  <h3 className="panel-title">🌍 Global Multi-Currency & International Tax Engine</h3>
+                  <p className="panel-subtitle">Multi-currency formatting, UK/EU Margin Scheme, US Sales Tax, and carrier tracking</p>
+                </div>
+              </div>
+              <div className="settings-fields">
+                <label>
+                  Currency code
+                  <select
+                    value={form.currencyCode || "USD"}
+                    onChange={(event) => {
+                      const code = event.target.value;
+                      const symbols: Record<string, string> = {
+                        USD: "$",
+                        EUR: "€",
+                        GBP: "£",
+                        AUD: "A$",
+                        CAD: "C$",
+                        AED: "AED",
+                        JPY: "¥",
+                        INR: "₹",
+                        LKR: "Rs.",
+                      };
+                      change("currencyCode", code);
+                      change("currencySymbol", symbols[code] || code);
+                    }}
+                  >
+                    <option value="USD">USD - United States Dollar ($)</option>
+                    <option value="EUR">EUR - Euro (€)</option>
+                    <option value="GBP">GBP - British Pound (£)</option>
+                    <option value="AUD">AUD - Australian Dollar (A$)</option>
+                    <option value="CAD">CAD - Canadian Dollar (C$)</option>
+                    <option value="AED">AED - United Arab Emirates Dirham</option>
+                    <option value="JPY">JPY - Japanese Yen (¥)</option>
+                    <option value="INR">INR - Indian Rupee (₹)</option>
+                    <option value="LKR">LKR - Sri Lankan Rupee (Rs.)</option>
+                  </select>
+                </label>
+                <label>
+                  Currency symbol
+                  <input
+                    value={form.currencySymbol || "$"}
+                    onChange={(event) => change("currencySymbol", event.target.value)}
+                    maxLength={10}
+                    placeholder="$ or €"
+                  />
+                </label>
+                <label>
+                  Symbol position
+                  <select
+                    value={form.currencyPosition || "prefix"}
+                    onChange={(event) => change("currencyPosition", event.target.value as "prefix" | "suffix")}
+                  >
+                    <option value="prefix">Prefix (e.g. $1,299.00 / £850.00)</option>
+                    <option value="suffix">Suffix (e.g. 1.299,00 € / 2500 AED)</option>
+                  </select>
+                </label>
+                <label>
+                  Date format
+                  <select
+                    value={form.dateFormat || "MM/DD/YYYY"}
+                    onChange={(event) => change("dateFormat", event.target.value as any)}
+                  >
+                    <option value="MM/DD/YYYY">MM/DD/YYYY (USA & Canada)</option>
+                    <option value="DD/MM/YYYY">DD/MM/YYYY (UK, Europe, Australia)</option>
+                    <option value="YYYY-MM-DD">YYYY-MM-DD (ISO 8601 Standard)</option>
+                  </select>
+                </label>
+                <label>
+                  Tax Compliance Engine
+                  <select
+                    value={form.taxMode || "standard"}
+                    onChange={(event) => change("taxMode", event.target.value as any)}
+                  >
+                    <option value="standard">Standard VAT / GST (Australia, Canada, UAE)</option>
+                    <option value="us_sales_tax">US State & Local Sales Tax</option>
+                    <option value="uk_eu_margin_scheme">UK / EU Second-Hand Margin Scheme (HMRC / Art 313)</option>
+                  </select>
+                </label>
+                <label>
+                  Default Courier / Carrier
+                  <select
+                    value={form.defaultShippingCarrier || "FedEx"}
+                    onChange={(event) => change("defaultShippingCarrier", event.target.value)}
+                  >
+                    <option value="FedEx">FedEx Express</option>
+                    <option value="UPS">UPS (United Parcel Service)</option>
+                    <option value="DHL">DHL Express</option>
+                    <option value="USPS">USPS (United States Postal Service)</option>
+                    <option value="Royal Mail">Royal Mail (UK)</option>
+                    <option value="DPD">DPD (Europe)</option>
+                    <option value="Australia Post">Australia Post</option>
+                    <option value="Domex">Domex (South Asia)</option>
+                  </select>
+                </label>
+                <label>
+                  Tax ID / VAT / EIN / ABN #
+                  <input
+                    value={form.taxId || ""}
+                    onChange={(event) => change("taxId", event.target.value)}
+                    maxLength={50}
+                    placeholder="e.g. US EIN 12-3456789 or GB 123 4567 89"
+                  />
+                </label>
+                <label>
+                  Tax / VAT rate (%)
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={form.taxRatePercent !== undefined ? form.taxRatePercent : 0}
+                    onChange={(event) => change("taxRatePercent", Number(event.target.value))}
+                  />
+                </label>
+                <label className="full-field" style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", marginTop: "8px" }}>
+                  <input
+                    type="checkbox"
+                    checked={form.taxInclusive !== false}
+                    onChange={(event) => change("taxInclusive", event.target.checked)}
+                  />
+                  <span>Retail prices are tax inclusive (applies to Standard VAT/GST)</span>
+                </label>
+              </div>
+            </section>
+          )}
+
+{session.role === "Owner" && <TesterAgentsPanel agents={testerAgents} onAgentsChange={onTesterAgentsChange} onAuditChange={onAuditChange} />}
           {session.role === "Owner" && initialSystem && <RecoveryPanel initialSystem={initialSystem} onAuditChange={onAuditChange} />}
         </div>
 
@@ -850,7 +1382,7 @@ function Stat({ label, value, indicator }: { label: string; value: string; indic
 
 function DeviceTable({ devices }: { devices: DeviceRecord[] }) {
   if (!devices.length) return <div className="empty-state">No devices in this list.</div>;
-  return <div className="table-wrap"><table className="device-table"><thead><tr><th>Device</th><th>Health</th><th>Grade</th><th>Lifecycle</th><th>Passport</th></tr></thead><tbody>{devices.map((device) => <tr key={device.id}><td><div className="device-cell"><span className="device-thumb">PC</span><span><span className="device-name">{device.name}</span><span className="device-id">{device.id} | {device.serial}</span></span></div></td><td><span className="score">{device.score}</span>/100</td><td><span className="grade-badge" style={{ width: 31, height: 31, borderRadius: 10, fontSize: 12 }}>{device.grade}</span></td><td><span className={`status-pill lifecycle-${device.lifecycleStatus.toLowerCase()}`}>{device.lifecycleStatus}</span></td><td><a className="button secondary small" href={`/passport/${device.id}`}>Open</a></td></tr>)}</tbody></table></div>;
+  return <div className="table-wrap"><table className="device-table"><thead><tr><th>Device</th><th>Health</th><th>Grade</th><th>Lifecycle</th><th>Passport</th></tr></thead><tbody>{devices.map((device) => <tr key={device.id}><td><div className="device-cell"><span className="device-thumb">PC</span><span><span className="device-name">{device.name}</span><span className="device-id">{device.id} | {device.serial}</span></span></div></td><td><span className="score">{device.score}</span>/100</td><td><span className="grade-badge" style={{ width: 31, height: 31, borderRadius: 10, fontSize: 12 }}>{device.grade}</span></td><td><span className={`status-pill lifecycle-${device.lifecycleStatus.toLowerCase()}`}>{device.lifecycleStatus}</span></td><td><div style={{ display: "flex", gap: "6px" }}><a className="button secondary small" href={`/passport/${device.id}`}>Open</a><a className="button secondary small" href={`/social-card/${device.id}`} target="_blank" title="1080x1080 Marketing Graphic">Card</a></div></td></tr>)}</tbody></table></div>;
 }
 
 function Activity({ icon, title, body, time }: { icon: string; title: string; body: string; time: string }) {
